@@ -2,6 +2,7 @@
 using Amazon.DynamoDBv2.Model;
 using Amazon.S3;
 using Amazon.S3.Transfer;
+using iTextSharp.text.pdf.codec;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -9,15 +10,31 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using UploadPatterns;
 
 namespace Uploader
 {
     public partial class MainWindow : Window
     {
-        private string selectedFolder = string.Empty;
         private readonly string bucketName = ConfigurationManager.AppSettings["S3Bucket"] ?? "cross-stitch-designs";
         private readonly AmazonDynamoDBClient dynamoDbClient = new AmazonDynamoDBClient();
         private readonly AmazonS3Client s3Client = new AmazonS3Client();
+        string m_strImageFileName = string.Empty;
+        string m_strBatchFolder = string.Empty;
+        PatternInfo m_patternInfo;
+
+        void GetPDF(string strPDFFile)
+        {
+            m_patternInfo = new PatternInfo(strPDFFile);
+            txtTitle.Text = m_patternInfo.Title;
+            txtNotes.Text = m_patternInfo.Notes;
+            txtWidth.Text = m_patternInfo.Width.ToString();
+            txtHeight.Text = m_patternInfo.Height.ToString();
+            txtNColors.Text = m_patternInfo.NColors.ToString();
+            GetImage(strPDFFile);
+        }
 
         public MainWindow()
         {
@@ -31,16 +48,18 @@ namespace Uploader
                 dialog.Description = "Select a folder";
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
-                    selectedFolder = dialog.SelectedPath;
-                    txtFolderPath.Text = selectedFolder;
+                    m_strBatchFolder = dialog.SelectedPath;
+                    txtFolderPath.Text = m_strBatchFolder;
+                    m_strImageFileName = Path.Combine(m_strBatchFolder, "1.jpg");
                     LoadAlbumId();
+                    GetPDF(Path.Combine(m_strBatchFolder, "1.pdf"));
                 }
             }
         }
 
         private void LoadAlbumId()
         {
-            var txtFiles = Directory.GetFiles(selectedFolder, "*.txt");
+            var txtFiles = Directory.GetFiles(m_strBatchFolder, "*.txt");
             if (txtFiles.Length == 1)
             {
                 string albumFile = txtFiles[0];
@@ -62,7 +81,7 @@ namespace Uploader
 
         private async void BtnUpload_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(selectedFolder) || string.IsNullOrEmpty(txtAlbumNumber.Text))
+            if (string.IsNullOrEmpty(m_strBatchFolder) || string.IsNullOrEmpty(txtAlbumNumber.Text))
             {
                 System.Windows.MessageBox.Show("Please select a folder and ensure AlbumID is loaded.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
@@ -76,7 +95,7 @@ namespace Uploader
                 string albumPartitionKey = $"ALB#{albumId.ToString("D4")}";
 
                 // Find .scc file for DesignName
-                var sccFiles = Directory.GetFiles(selectedFolder, "*.scc");
+                var sccFiles = Directory.GetFiles(m_strBatchFolder, "*.scc");
                 if (sccFiles.Length != 1)
                 {
                     throw new Exception("Exactly one .scc file expected.");
@@ -85,12 +104,13 @@ namespace Uploader
                 string designName = Path.GetFileNameWithoutExtension(sccFile);
 
                 // Find 1.pdf
-                string pdfFile = Path.Combine(selectedFolder, "1.pdf");
+                string pdfFile = Path.Combine(m_strBatchFolder, "1.pdf");
                 if (!File.Exists(pdfFile))
                 {
                     throw new Exception("1.pdf not found.");
                 }
 
+                return;
                 // Get max DesignID
                 var maxDesignIdRequest = new QueryRequest
                 {
@@ -203,5 +223,115 @@ namespace Uploader
                 System.Windows.MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        private static List<System.Drawing.Image> ExtractImages(String PDFSourcePath)
+        {
+            List<System.Drawing.Image> ImgList = new List<System.Drawing.Image>();
+
+            iTextSharp.text.pdf.RandomAccessFileOrArray RAFObj = null;
+            iTextSharp.text.pdf.PdfReader PDFReaderObj = null;
+            iTextSharp.text.pdf.PdfObject PDFObj = null;
+            iTextSharp.text.pdf.PdfStream PDFStremObj = null;
+
+            try
+            {
+                RAFObj = new iTextSharp.text.pdf.RandomAccessFileOrArray(PDFSourcePath);
+                PDFReaderObj = new iTextSharp.text.pdf.PdfReader(RAFObj, null);
+
+                for (int i = 0; i <= PDFReaderObj.XrefSize - 1; i++)
+                {
+                    PDFObj = PDFReaderObj.GetPdfObject(i);
+
+                    if ((PDFObj != null) && PDFObj.IsStream())
+                    {
+                        PDFStremObj = (iTextSharp.text.pdf.PdfStream)PDFObj;
+                        iTextSharp.text.pdf.PdfObject subtype = PDFStremObj.Get(iTextSharp.text.pdf.PdfName.SUBTYPE);
+
+                        if ((subtype != null) && subtype.ToString() == iTextSharp.text.pdf.PdfName.IMAGE.ToString())
+                        {
+                            try
+                            {
+
+                                iTextSharp.text.pdf.parser.PdfImageObject PdfImageObj =
+                         new iTextSharp.text.pdf.parser.PdfImageObject((iTextSharp.text.pdf.PRStream)PDFStremObj);
+
+                                System.Drawing.Image ImgPDF = PdfImageObj.GetDrawingImage();
+
+
+                                ImgList.Add(ImgPDF);
+
+                            }
+                            catch (Exception)
+                            {
+
+                            }
+                        }
+                    }
+                }
+                PDFReaderObj.Close();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception(ex.Message);
+            }
+            return ImgList;
+        }
+
+        void GetImage(String strPDFFileName)
+        {
+            if (!File.Exists(strPDFFileName))
+            {
+                ShowMessage(String.Format("No file {0}", strPDFFileName));
+                return;
+            }
+
+            List<System.Drawing.Image> lstImages = ExtractImages(strPDFFileName);
+            if (lstImages.Count < 1)
+            {
+                ShowMessage("Failed to get Image");
+                return;
+            }
+
+            Bitmap bitmp = new Bitmap(lstImages[0]);
+            bitmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
+            ImageSource imageSource = ToBitmapSource(bitmp);
+            imgBatch.Source = imageSource;
+            // BitmapImage image = new BitmapImage(new Uri(m_strImageFileName));
+            // imgBatch.Source = image;
+            try
+            {
+                bitmp.Save(m_strImageFileName, System.Drawing.Imaging.ImageFormat.Jpeg);
+            }
+            catch
+            {
+                ShowMessage("Could not save image file");
+            }
+        }
+
+        void ShowMessage(string message)
+        {
+            System.Windows.MessageBox.Show(message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+
+        }
+
+        public static BitmapSource ToBitmapSource(System.Drawing.Bitmap source)
+        {
+            using (MemoryStream stream = new MemoryStream())
+            {
+                source.Save(stream, System.Drawing.Imaging.ImageFormat.Bmp);
+
+                stream.Position = 0;
+                BitmapImage result = new BitmapImage();
+                result.BeginInit();
+                // According to MSDN, "The default OnDemand cache option retains access to the stream until the image is needed."
+                // Force the bitmap to load right now so we can dispose the stream.
+                result.CacheOption = BitmapCacheOption.OnLoad;
+                result.StreamSource = stream;
+                result.EndInit();
+                result.Freeze();
+                return result;
+            }
+        }
+
     }
 }
