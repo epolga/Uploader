@@ -1,0 +1,22 @@
+This is what I want to do:
+
+ I want to remove S3 related text box and specific file related text box. And add new readonly textbox (or lable or something like that) for Album number. The program should choose folder. The structure of the folder will be as following:
+
+
+
+
+
+<AlbumID>.txt - AlbumID will be treated as a number of Album. For example 7.txt means that the number of album will be 7. And the text control devoted to Album number should reflect it.
+
+
+
+1.pdf file
+
+
+
+<DesignName>.scc file
+
+s3://cross-stitch-designs/ url will be stored in configuration I added DynamoDB table description to the metadata The <DesignID> will be <maximal design from the table> + 1.   <DesignName>.css will be uploaded to s3://cross-stitch-designs/charts/ , but it's name will be replaced by 'DesignID'(padded with leading zeros to length 5) + '_' + DesignName + '.css' 1.pdf will be renamed to Stitch<DesignID>_Kit.pdf and uploaded to s3://cross-stitch-designs/pdfs/<AlbumID>   New design with appropriate DesignName, DesignID and AlbumID should be added to DynamoDB table.
+
+
+
