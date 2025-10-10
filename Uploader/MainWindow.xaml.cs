@@ -50,7 +50,7 @@ namespace Uploader
                 {
                     m_strBatchFolder = dialog.SelectedPath;
                     txtFolderPath.Text = m_strBatchFolder;
-                    m_strImageFileName = Path.Combine(m_strBatchFolder, "1.jpg");
+                    m_strImageFileName = Path.Combine(m_strBatchFolder, "4.jpg");
                     LoadAlbumId();
                     GetPDF(Path.Combine(m_strBatchFolder, "1.pdf"));
                 }
@@ -110,7 +110,6 @@ namespace Uploader
                     throw new Exception("1.pdf not found.");
                 }
 
-                return;
                 // Get max DesignID
                 var maxDesignIdRequest = new QueryRequest
                 {
@@ -173,15 +172,15 @@ namespace Uploader
                 int newNPageNum = maxNPage + 1;
                 string nPage = newNPageNum.ToString("D5"); // Pad with leading zeros to 7 characters
 
-                // Upload .scc as .css with new name
+                // Upload .scc with new name
                 string paddedDesignId = designId.ToString("D5");
-                string cssKey = $"charts/{paddedDesignId}_{designName}.css";
+                string cssKey = $"charts/{paddedDesignId}_{designName}.scc";
                 var cssUploadRequest = new TransferUtilityUploadRequest
                 {
                     FilePath = sccFile,
                     BucketName = bucketName,
                     Key = cssKey,
-                    ContentType = "text/css"
+                    ContentType = "text/scc"
                 };
                 var transferUtility = new TransferUtility(s3Client);
                 await transferUtility.UploadAsync(cssUploadRequest);
@@ -197,6 +196,19 @@ namespace Uploader
                 };
                 await transferUtility.UploadAsync(pdfUploadRequest);
 
+                // Upload Image
+                string photoFileName = Path.GetFileName(m_strImageFileName);
+                string photoKey = $"photos/{albumId}/{designId}/{photoFileName}";
+                var photoUploadRequest = new TransferUtilityUploadRequest
+                {
+                    FilePath = m_strImageFileName,
+                    BucketName = bucketName,
+                    Key = photoKey,
+                    ContentType = "image/jpeg"
+                };
+                await transferUtility.UploadAsync(photoUploadRequest);
+
+
                 // Insert new item into DynamoDB
                 var putItemRequest = new PutItemRequest
                 {
@@ -205,12 +217,18 @@ namespace Uploader
                     {
                         { "ID", new AttributeValue { S = albumPartitionKey } },
                         { "NPage", new AttributeValue { S = nPage } },
-                        { "EntityType", new AttributeValue { S = "DESIGN" } },
+                        { "AlbumID", new AttributeValue { N = albumId.ToString() } },
+                        { "Caption", new AttributeValue { S = designName } },
+                        { "Description", new AttributeValue { S = m_patternInfo.Description } },
                         { "DesignID", new AttributeValue { N = designId.ToString() } },
+                        { "EntityType", new AttributeValue { S = "DESIGN" } },
+                        { "Height", new AttributeValue { N = m_patternInfo.Height.ToString()} },
+                        { "NColors", new AttributeValue { N = m_patternInfo.NColors.ToString()} },
+                        { "NDownloaded", new AttributeValue { N = "0"} },
                         { "NGlobalPage", new AttributeValue { N = nGlobalPage.ToString() } },
-                        { "DesignName", new AttributeValue { S = designName } },
-                        { "AlbumID", new AttributeValue { N = albumId.ToString() } }
-                        // Add other attributes as needed
+                        { "Notes", new AttributeValue { S = m_patternInfo.Notes } },
+                        { "Width", new AttributeValue { N = m_patternInfo.Width.ToString()} },
+                       // Add other attributes as needed
                     }
                 };
                 await dynamoDbClient.PutItemAsync(putItemRequest);
@@ -292,15 +310,14 @@ namespace Uploader
                 return;
             }
 
-            Bitmap bitmp = new Bitmap(lstImages[0]);
-            bitmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
-            ImageSource imageSource = ToBitmapSource(bitmp);
+            Bitmap bitmap = new Bitmap(lstImages[0]);
+            bitmap.RotateFlip(RotateFlipType.RotateNoneFlipY);
+            ImageSource imageSource = ToBitmapSource(bitmap);
             imgBatch.Source = imageSource;
-            // BitmapImage image = new BitmapImage(new Uri(m_strImageFileName));
-            // imgBatch.Source = image;
+
             try
             {
-                bitmp.Save(m_strImageFileName, System.Drawing.Imaging.ImageFormat.Jpeg);
+                bitmap.Save(m_strImageFileName, System.Drawing.Imaging.ImageFormat.Jpeg);
             }
             catch
             {
