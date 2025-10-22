@@ -1,0 +1,8 @@
+{
+  "TemplateName": "TestTemplate",
+  "TemplateContent": {
+    "Subject": "Your Email Subject {{subject}}",
+    "Text": "Plain text body with {{plainbody}}.",
+    "Html": "<p>HTML body with <strong>{{htmbody}}</strong>.</p>"
+  }
+}

@@ -13,16 +13,24 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using UploadPatterns;
+using Amazon.SimpleEmail.Model;
+using Amazon.SimpleEmail;
+using Message = Amazon.SimpleEmail.Model.Message;
+using Amazon.S3.Model;
+using Amazon;
+using Amazon.DynamoDBv2.DocumentModel;
 
 namespace Uploader
 {
     public partial class MainWindow : Window
     {
-        private readonly string bucketName = ConfigurationManager.AppSettings["S3Bucket"] ?? "cross-stitch-designs";
+        private readonly string m_strBucketName = ConfigurationManager.AppSettings["S3Bucket"] ?? "cross-stitch-designs";
         private readonly AmazonDynamoDBClient dynamoDbClient = new AmazonDynamoDBClient();
         private readonly AmazonS3Client s3Client = new AmazonS3Client();
+        private readonly AmazonSimpleEmailServiceClient sesClient = new AmazonSimpleEmailServiceClient();
         string m_strImageFileName = string.Empty;
         string m_strBatchFolder = string.Empty;
+        static string m_photoPrefix = "photos";
         PatternInfo m_patternInfo;
 
         void GetPDF(string strPDFFile)
@@ -170,17 +178,17 @@ namespace Uploader
                     maxNPage = string.IsNullOrEmpty(trimmed) ? 0 : int.Parse(trimmed);
                 }
                 int newNPageNum = maxNPage + 1;
-                string nPage = newNPageNum.ToString("D5"); // Pad with leading zeros to 7 characters
+                string nPage = newNPageNum.ToString("D5"); // Pad with leading zeros to 5 characters
 
-                // Upload .scc with new name
+                // Upload .scc as .css with new name
                 string paddedDesignId = designId.ToString("D5");
-                string cssKey = $"charts/{paddedDesignId}_{designName}.scc";
+                string cssKey = $"charts/{paddedDesignId}_{designName}.css";
                 var cssUploadRequest = new TransferUtilityUploadRequest
                 {
                     FilePath = sccFile,
-                    BucketName = bucketName,
+                    BucketName = m_strBucketName,
                     Key = cssKey,
-                    ContentType = "text/scc"
+                    ContentType = "text/css"
                 };
                 var transferUtility = new TransferUtility(s3Client);
                 await transferUtility.UploadAsync(cssUploadRequest);
@@ -190,7 +198,7 @@ namespace Uploader
                 var pdfUploadRequest = new TransferUtilityUploadRequest
                 {
                     FilePath = pdfFile,
-                    BucketName = bucketName,
+                    BucketName = m_strBucketName,
                     Key = pdfKey,
                     ContentType = "application/pdf"
                 };
@@ -198,11 +206,11 @@ namespace Uploader
 
                 // Upload Image
                 string photoFileName = Path.GetFileName(m_strImageFileName);
-                string photoKey = $"photos/{albumId}/{designId}/{photoFileName}";
+                string photoKey = $"{m_photoPrefix}/{albumId}/{designId}/{photoFileName}";
                 var photoUploadRequest = new TransferUtilityUploadRequest
                 {
                     FilePath = m_strImageFileName,
-                    BucketName = bucketName,
+                    BucketName = m_strBucketName,
                     Key = photoKey,
                     ContentType = "image/jpeg"
                 };
@@ -232,6 +240,20 @@ namespace Uploader
                     }
                 };
                 await dynamoDbClient.PutItemAsync(putItemRequest);
+                string mappingKey = $"{m_photoPrefix}/mappings";
+                await CreateDesignToAlbumMap(s3Client, m_strBucketName, mappingKey);
+                // Send notification email to admin
+                var emailRequest = new SendEmailRequest
+                {
+                    Source = ConfigurationManager.AppSettings["SenderEmail"],
+                    Destination = new Destination { ToAddresses = new List<string> { ConfigurationManager.AppSettings["AdminEmail"] } },
+                    Message = new Message
+                    {
+                        Subject = new Content("Upload Successful"),
+                        Body = new Body { Text = new Content($"The upload for album {albumId} design {designId} ({designName}) was successful.") }
+                    }
+                };
+                await sesClient.SendEmailAsync(emailRequest);
 
                 txtStatus.Text = "Upload and insertion completed successfully.";
             }
@@ -347,6 +369,49 @@ namespace Uploader
                 result.EndInit();
                 result.Freeze();
                 return result;
+            }
+        }
+
+        static async Task CreateDesignToAlbumMap(AmazonS3Client s3Client, string bucketName, string s3Prefix)
+        {
+            var dynamoClient = new AmazonDynamoDBClient(RegionEndpoint.USEast1);
+            var table = Table.LoadTable(dynamoClient, "CrossStitchItems");
+            var listRequest = new ListObjectsV2Request
+            {
+                BucketName = "cross-stitch-designs",
+                Prefix = $"{m_photoPrefix}/"
+            };
+
+            var paginator = s3Client.Paginators.ListObjectsV2(listRequest);
+            File.AppendAllLines("DesignToAlbumMap.csv", new string[] { "DesignID,AlbumID" });
+            string prevDesignStr = "";
+            string prevAlbum = "";
+            SortedDictionary<int, int> designToAlbumMap = new SortedDictionary<int, int>();
+            await foreach (var obj in paginator.S3Objects)
+            {
+                var key = obj.Key;
+                if (key.Contains("by-page") || key.Contains("private"))
+                    continue;
+                var parts = key.Split('/');
+                if (parts.Length < 4) continue;
+                var album = parts[1];
+                var designStr = parts[2];
+                if (designStr == prevDesignStr && album == prevAlbum)
+                    continue;
+                var designId = 0;
+                if (!Int32.TryParse(designStr, out designId))
+                    continue;
+                var albumId = 0;
+                if (!Int32.TryParse(album, out albumId))
+                    continue;
+                designToAlbumMap[designId] = albumId;
+
+                prevDesignStr = designStr;
+                prevAlbum = album;
+            }
+            foreach (var kvp in designToAlbumMap)
+            {
+                File.AppendAllLines("DesignToAlbumMap.csv", new string[] { $"{kvp.Key},{kvp.Value}" });
             }
         }
 
