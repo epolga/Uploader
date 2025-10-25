@@ -19,12 +19,13 @@ using Message = Amazon.SimpleEmail.Model.Message;
 using Amazon.S3.Model;
 using Amazon;
 using Amazon.DynamoDBv2.DocumentModel;
+using Uploader.Helpers;
 
 namespace Uploader
 {
     public partial class MainWindow : Window
     {
-        private readonly string m_strBucketName = ConfigurationManager.AppSettings["S3Bucket"] ?? "cross-stitch-designs";
+        private string m_strBucketName = ConfigurationManager.AppSettings["S3Bucket"] ?? "cross-stitch-designs";
         private readonly AmazonDynamoDBClient dynamoDbClient = new AmazonDynamoDBClient();
         private readonly AmazonS3Client s3Client = new AmazonS3Client();
         private readonly AmazonSimpleEmailServiceClient sesClient = new AmazonSimpleEmailServiceClient();
@@ -33,6 +34,8 @@ namespace Uploader
         static string m_photoPrefix = "photos";
         PatternInfo m_patternInfo;
 
+        EC2Helper m_ec2Helper = new EC2Helper(RegionEndpoint.USEast1, "cross-stitch-env");
+        S3Helper m_s3Helper = new S3Helper(RegionEndpoint.USEast1, "cross-stitch-designs");
         void GetPDF(string strPDFFile)
         {
             m_patternInfo = new PatternInfo(strPDFFile);
@@ -253,9 +256,10 @@ namespace Uploader
                         Body = new Body { Text = new Content($"The upload for album {albumId} design {designId} ({designName}) was successful.") }
                     }
                 };
+                await m_s3Helper.DeleteFileAsync("mappings/design-album-mapping.csv");
                 await sesClient.SendEmailAsync(emailRequest);
-
                 txtStatus.Text = "Upload and insertion completed successfully.";
+                await m_ec2Helper.RebootInstancesRequest();
             }
             catch (Exception ex)
             {
@@ -264,7 +268,7 @@ namespace Uploader
             }
         }
 
-        private static List<System.Drawing.Image> ExtractImages(String PDFSourcePath)
+        private List<System.Drawing.Image> ExtractImages(String PDFSourcePath)
         {
             List<System.Drawing.Image> ImgList = new List<System.Drawing.Image>();
 
