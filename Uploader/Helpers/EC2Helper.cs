@@ -1,4 +1,5 @@
-﻿using System;
+﻿// EC2Helper.cs
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -6,6 +7,7 @@ using System.Threading.Tasks;
 using Amazon;
 using Amazon.EC2;
 using Amazon.EC2.Model;
+
 namespace Uploader.Helpers
 {
     class EC2Helper
@@ -19,7 +21,7 @@ namespace Uploader.Helpers
             m_strEnvironmentName = environmentName;
         }
 
-        public async Task RebootInstancesRequest()
+        public async Task RebootInstancesRequest(Action<string> statusCallback = null)
         {
             if (string.IsNullOrEmpty(m_strEnvironmentName))
             {
@@ -28,13 +30,14 @@ namespace Uploader.Helpers
             var instanceIds = await GetInstanceIdsByTagAsync(ec2Client, "Name", m_strEnvironmentName);
             if (!instanceIds.Any())
             {
-                Console.WriteLine($"No instances found for environment '{m_strEnvironmentName}'.");
+                statusCallback?.Invoke($"No instances found for environment '{m_strEnvironmentName}'.\n");
                 return;
             }
 
-            bool success = await RebootInstancesAsync(ec2Client, instanceIds);
-            Console.WriteLine(success ? "All instances rebooted successfully." : "Failed to reboot one or more instances.");
+            bool success = await RebootInstancesAsync(ec2Client, instanceIds, statusCallback);
+            statusCallback?.Invoke(success ? "All instances rebooted successfully.\n" : "Failed to reboot one or more instances.\n");
         }
+
         /// <summary>
         /// Retrieves instance IDs filtered by a specific tag key-value pair.
         /// </summary>
@@ -42,14 +45,14 @@ namespace Uploader.Helpers
         /// <param name="tagKey">The tag key (e.g., "Environment").</param>
         /// <param name="tagValue">The tag value (e.g., "dev").</param>
         /// <returns>A task that represents the asynchronous operation, returning a list of matching instance IDs.</returns>
-        private async Task<List<string>> GetInstanceIdsByTagAsync(AmazonEC2Client ec2Client, string tagKey, string tagValue)
+        private static async Task<List<string>> GetInstanceIdsByTagAsync(AmazonEC2Client ec2Client, string tagKey, string tagValue)
         {
             var describeRequest = new DescribeInstancesRequest
             {
                 Filters = new List<Filter>
-            {
-                new Filter($"tag:{tagKey}", new List<string> { tagValue })
-            }
+                {
+                    new Filter($"tag:{tagKey}", new List<string> { tagValue })
+                }
             };
 
             var response = await ec2Client.DescribeInstancesAsync(describeRequest);
@@ -65,7 +68,7 @@ namespace Uploader.Helpers
         /// <param name="ec2Client">The AmazonEC2Client instance.</param>
         /// <param name="instanceIds">The list of instance IDs to reboot.</param>
         /// <returns>A task that represents the asynchronous operation, returning true on success.</returns>
-        static async Task<bool> RebootInstancesAsync(AmazonEC2Client ec2Client, List<string> instanceIds)
+        static async Task<bool> RebootInstancesAsync(AmazonEC2Client ec2Client, List<string> instanceIds, Action<string> statusCallback = null)
         {
             try
             {
@@ -75,21 +78,33 @@ namespace Uploader.Helpers
                 };
 
                 await ec2Client.RebootInstancesAsync(rebootRequest);
-                Console.WriteLine($"Reboot request sent for instances: {string.Join(", ", instanceIds)}.");
+                statusCallback?.Invoke($"Reboot request sent for instances: {string.Join(", ", instanceIds)}.\n");
 
                 // Wait for all instances to return to running state
-                var tasks = instanceIds.Select(id => WaitForInstanceStateAsync(ec2Client, id, InstanceStateName.Running));
+                var tasks = instanceIds.Select(id => WaitForInstanceStateAsync(ec2Client, id, InstanceStateName.Running, statusCallback));
                 var results = await Task.WhenAll(tasks);
-                return results.All(r => r);
+
+                if (results.All(r => r))
+                {
+                    statusCallback?.Invoke("All instances are running. Checking health...\n");
+                    var healthTasks = instanceIds.Select(id => IsInstanceRestartedAndHealthyAsync(ec2Client, id, statusCallback));
+                    var healthResults = await Task.WhenAll(healthTasks);
+                    return healthResults.All(h => h);
+                }
+                else
+                {
+                    statusCallback?.Invoke("Some instances failed to reach running state.\n");
+                    return false;
+                }
             }
             catch (AmazonEC2Exception ex)
             {
-                Console.WriteLine($"EC2 error: {ex.Message}");
+                statusCallback?.Invoke($"EC2 error: {ex.Message}\n");
                 return false;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Unexpected error: {ex.Message}");
+                statusCallback?.Invoke($"Unexpected error: {ex.Message}\n");
                 return false;
             }
         }
@@ -101,7 +116,7 @@ namespace Uploader.Helpers
         /// <param name="instanceId">The ID of the instance.</param>
         /// <param name="targetState">The target instance state.</param>
         /// <returns>A task that represents the asynchronous operation, returning true if the state is reached.</returns>
-        private static async Task<bool> WaitForInstanceStateAsync(AmazonEC2Client ec2Client, string instanceId, InstanceStateName targetState)
+        private static async Task<bool> WaitForInstanceStateAsync(AmazonEC2Client ec2Client, string instanceId, InstanceStateName targetState, Action<string> statusCallback = null)
         {
             var describeRequest = new DescribeInstancesRequest
             {
@@ -120,14 +135,80 @@ namespace Uploader.Helpers
 
                 if (!inTargetState)
                 {
-                    Console.Write("."); // Progress indicator
-                    Thread.Sleep(5000); // Wait 5 seconds before retrying
+                    statusCallback?.Invoke(".");
+                    await Task.Delay(5000); // Use Task.Delay for async
                     retryCount++;
                 }
             }
 
-            Console.WriteLine(); // New line after progress dots
+            statusCallback?.Invoke("\n"); // New line after progress dots
             return inTargetState;
+        }
+
+        /// <summary>
+        /// Checks if the specified EC2 instance has restarted and is running well, including status checks.
+        /// </summary>
+        /// <param name="ec2Client">The AmazonEC2Client instance.</param>
+        /// <param name="instanceId">The ID of the instance to check.</param>
+        /// <param name="statusCallback">Optional callback for status messages.</param>
+        /// <returns>A task that represents the asynchronous operation, returning true if the instance is running and healthy.</returns>
+        public static async Task<bool> IsInstanceRestartedAndHealthyAsync(AmazonEC2Client ec2Client, string instanceId, Action<string> statusCallback = null)
+        {
+            try
+            {
+                // First, check if the instance is in the running state
+                var stateRequest = new DescribeInstancesRequest
+                {
+                    InstanceIds = new List<string> { instanceId }
+                };
+                var stateResponse = await ec2Client.DescribeInstancesAsync(stateRequest);
+                var instance = stateResponse.Reservations.SelectMany(r => r.Instances).FirstOrDefault();
+                if (instance == null || instance.State.Name != InstanceStateName.Running)
+                {
+                    statusCallback?.Invoke($"Instance {instanceId} is not running.\n");
+                    return false;
+                }
+
+                // Then, check the instance status (system and instance checks)
+                var statusRequest = new DescribeInstanceStatusRequest
+                {
+                    InstanceIds = new List<string> { instanceId },
+                    IncludeAllInstances = true // Ensures we get status even if not running, but we already checked running
+                };
+                var statusResponse = await ec2Client.DescribeInstanceStatusAsync(statusRequest);
+                var status = statusResponse.InstanceStatuses.FirstOrDefault(s => s.InstanceId == instanceId);
+
+                if (status == null)
+                {
+                    statusCallback?.Invoke($"No status found for instance {instanceId}.\n");
+                    return false;
+                }
+
+                bool isHealthy = status.InstanceState.Name == InstanceStateName.Running &&
+                                  status.SystemStatus.Status == SummaryStatus.Ok &&
+                                  status.Status.Status == SummaryStatus.Ok;
+
+                if (isHealthy)
+                {
+                    statusCallback?.Invoke($"Instance {instanceId} is running and healthy.\n");
+                }
+                else
+                {
+                    statusCallback?.Invoke($"Instance {instanceId} is running but not healthy. System Status: {status.SystemStatus.Status}, Instance Status: {status.Status.Status}\n");
+                }
+
+                return isHealthy;
+            }
+            catch (AmazonEC2Exception ex)
+            {
+                statusCallback?.Invoke($"EC2 error checking instance {instanceId}: {ex.Message}\n");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                statusCallback?.Invoke($"Unexpected error checking instance {instanceId}: {ex.Message}\n");
+                return false;
+            }
         }
     }
 }

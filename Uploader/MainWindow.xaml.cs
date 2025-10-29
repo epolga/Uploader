@@ -1,4 +1,5 @@
-﻿using Amazon.DynamoDBv2;
+﻿// MainWindow.xaml.cs
+using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.S3;
 using Amazon.S3.Transfer;
@@ -52,7 +53,7 @@ namespace Uploader
             InitializeComponent();
         }
 
-        private void BtnSelectFolder_Click(object sender, RoutedEventArgs e)
+        private async void BtnSelectFolder_Click(object sender, RoutedEventArgs e)
         {
             using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
             {
@@ -62,7 +63,10 @@ namespace Uploader
                     m_strBatchFolder = dialog.SelectedPath;
                     txtFolderPath.Text = m_strBatchFolder;
                     m_strImageFileName = Path.Combine(m_strBatchFolder, "4.jpg");
+                    
                     LoadAlbumId();
+                    
+
                     GetPDF(Path.Combine(m_strBatchFolder, "1.pdf"));
                 }
             }
@@ -70,7 +74,9 @@ namespace Uploader
 
         private void LoadAlbumId()
         {
+            bool blnHasAlbum = false;
             var txtFiles = Directory.GetFiles(m_strBatchFolder, "*.txt");
+
             if (txtFiles.Length == 1)
             {
                 string albumFile = txtFiles[0];
@@ -88,6 +94,7 @@ namespace Uploader
             {
                 System.Windows.MessageBox.Show("Exactly one .txt file expected for AlbumID.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+
         }
 
         private async void BtnUpload_Click(object sender, RoutedEventArgs e)
@@ -258,8 +265,8 @@ namespace Uploader
                 };
                 await m_s3Helper.DeleteFileAsync("mappings/design-album-mapping.csv");
                 await sesClient.SendEmailAsync(emailRequest);
-                txtStatus.Text = "Upload and insertion completed successfully.";
-                await m_ec2Helper.RebootInstancesRequest();
+                txtStatus.Text = "Upload and insertion completed successfully. Starting reboot...\r\n";
+                await m_ec2Helper.RebootInstancesRequest(msg => Dispatcher.Invoke(() => txtStatus.Text += msg));
             }
             catch (Exception ex)
             {
