@@ -9,7 +9,7 @@ using MessageBox = System.Windows.MessageBox;
 
 namespace UploadPatterns
 {
-    class PatternInfo
+    public class PatternInfo
     {
         public PatternInfo(string strFilePath)
         {

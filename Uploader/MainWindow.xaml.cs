@@ -21,6 +21,8 @@ using Amazon.S3.Model;
 using Amazon;
 using Amazon.DynamoDBv2.DocumentModel;
 using Uploader.Helpers;
+using System.Net.Http; // If not already present
+using Newtonsoft.Json; // If not already present
 
 namespace Uploader
 {
@@ -37,6 +39,8 @@ namespace Uploader
 
         EC2Helper m_ec2Helper = new EC2Helper(RegionEndpoint.USEast1, "cross-stitch-env");
         S3Helper m_s3Helper = new S3Helper(RegionEndpoint.USEast1, "cross-stitch-designs");
+        private readonly PinterestHelper pinterestHelper = new PinterestHelper(); // Add this
+
         void GetPDF(string strPDFFile)
         {
             m_patternInfo = new PatternInfo(strPDFFile);
@@ -53,7 +57,7 @@ namespace Uploader
             InitializeComponent();
         }
 
-        private async void BtnSelectFolder_Click(object sender, RoutedEventArgs e)
+        private void BtnSelectFolder_Click(object sender, RoutedEventArgs e)
         {
             using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
             {
@@ -63,9 +67,8 @@ namespace Uploader
                     m_strBatchFolder = dialog.SelectedPath;
                     txtFolderPath.Text = m_strBatchFolder;
                     m_strImageFileName = Path.Combine(m_strBatchFolder, "4.jpg");
-                    
+
                     LoadAlbumId();
-                    
 
                     GetPDF(Path.Combine(m_strBatchFolder, "1.pdf"));
                 }
@@ -74,12 +77,10 @@ namespace Uploader
 
         private void LoadAlbumId()
         {
-            bool blnHasAlbum = false;
-            var txtFiles = Directory.GetFiles(m_strBatchFolder, "*.txt");
+            string? albumFile = Directory.GetFiles(m_strBatchFolder, "*.txt").FirstOrDefault(); ;
 
-            if (txtFiles.Length == 1)
-            {
-                string albumFile = txtFiles[0];
+            if (albumFile != null)
+            {    
                 string albumIdStr = Path.GetFileNameWithoutExtension(albumFile);
                 if (int.TryParse(albumIdStr, out int albumId))
                 {
@@ -222,7 +223,7 @@ namespace Uploader
                     FilePath = m_strImageFileName,
                     BucketName = m_strBucketName,
                     Key = photoKey,
-                    ContentType = "image/jpeg"
+                    ContentType = "image/jpeg",
                 };
                 await transferUtility.UploadAsync(photoUploadRequest);
 
@@ -250,6 +251,20 @@ namespace Uploader
                     }
                 };
                 await dynamoDbClient.PutItemAsync(putItemRequest);
+
+                // Create Pinterest Pin
+                try
+                {
+                    string imageUrl = $"https://{m_strBucketName}.s3.amazonaws.com/{photoKey}";
+                    string pinId = await pinterestHelper.CreatePinAsync(imageUrl, m_patternInfo, designName);
+                    txtStatus.Text += $"Pinterest Pin created successfully (ID: {pinId}).\r\n";
+                }
+                catch (Exception pinEx)
+                {
+                    txtStatus.Text += $"Pinterest Pin creation failed: {pinEx.Message}\r\n";
+                    // Optionally log or show a message box
+                }
+
                 string mappingKey = $"{m_photoPrefix}/mappings";
                 await CreateDesignToAlbumMap(s3Client, m_strBucketName, mappingKey);
                 // Send notification email to admin
