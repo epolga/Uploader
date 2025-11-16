@@ -1,8 +1,11 @@
 ﻿// Uploader/Helpers/PinterestHelper.cs
-// Changes:
-// - Added a private PinResponse class to strongly type the deserialization, avoiding issues with dynamic if the JSON structure is complex.
-// - Added check for empty response content, returning a placeholder if no body is present (though expected for 201).
-// - This should prevent deserialization failures if the content is empty or not a full object.
+// Production-ready Pinterest helper using image_url source type.
+//
+// Notes:
+// - Uses Pinterest API v5 production endpoint: https://api.pinterest.com/v5
+// - Expects valid OAuth access token and board ID in App.config:
+//     PinterestAccessToken, PinterestBoardId
+// - Creates a pin from a public image URL (e.g. your S3 image).
 
 using Amazon;
 using System;
@@ -12,7 +15,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using UploadPatterns; // Assuming PatternInfo is in this namespace; adjust if needed
+using UploadPatterns; // PatternInfo
 
 namespace Uploader.Helpers
 {
@@ -20,26 +23,50 @@ namespace Uploader.Helpers
     {
         private readonly string accessToken;
         private readonly string boardId;
-        private readonly string baseUrl = "https://api-sandbox.pinterest.com/v5"; // Use sandbox for testing; change to "https://api.pinterest.com/v5" for production
+
+        // Production Pinterest API base URL
+        private readonly string baseUrl = "https://api.pinterest.com/v5";
 
         public PinterestHelper()
         {
-            accessToken = ConfigurationManager.AppSettings["PinterestAccessToken"] ?? "";
-            boardId = ConfigurationManager.AppSettings["PinterestBoardId"] ?? "";
+            accessToken = ConfigurationManager.AppSettings["PinterestAccessToken"] ?? string.Empty;
+            boardId = ConfigurationManager.AppSettings["PinterestBoardId"] ?? string.Empty;
 
             if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(boardId))
             {
-                throw new InvalidOperationException("Pinterest access token or board ID not configured in App.config.");
+                throw new InvalidOperationException(
+                    "Pinterest access token or board ID not configured in App.config (keys: PinterestAccessToken, PinterestBoardId).");
             }
         }
 
+        /// <summary>
+        /// Creates a Pinterest pin on the configured board using an image URL.
+        /// </summary>
+        /// <param name="imageUrl">Public image URL (e.g. S3 HTTPS URL).</param>
+        /// <param name="patternInfo">Design metadata used for title/description.</param>
+        /// <returns>Pin ID string, or a descriptive message if ID is missing.</returns>
         public async Task<string> CreatePinAsync(string imageUrl, PatternInfo patternInfo)
         {
+            if (string.IsNullOrWhiteSpace(imageUrl))
+            {
+                throw new ArgumentException("imageUrl must not be empty.", nameof(imageUrl));
+            }
+
+            if (patternInfo == null)
+            {
+                throw new ArgumentNullException(nameof(patternInfo));
+            }
+
             var pinData = new
             {
                 board_id = boardId,
-                title = patternInfo.Title ?? "Default Title", // Ensure non-null
-                description = $"{patternInfo.Description ?? string.Empty}\nNotes: {patternInfo.Notes ?? string.Empty}\nDimensions: {patternInfo.Width}x{patternInfo.Height}, Colors: {patternInfo.NColors}",
+                title = string.IsNullOrWhiteSpace(patternInfo.Title)
+                    ? "Cross-stitch pattern"
+                    : patternInfo.Title,
+                description =
+                    $"{patternInfo.Description ?? string.Empty}\n" +
+                    $"Notes: {patternInfo.Notes ?? string.Empty}\n" +
+                    $"Dimensions: {patternInfo.Width}x{patternInfo.Height}, Colors: {patternInfo.NColors}",
                 media_source = new
                 {
                     source_type = "image_url",
@@ -47,48 +74,50 @@ namespace Uploader.Helpers
                 }
             };
 
-            var response = await SendRequestAsync(HttpMethod.Post, "/pins", pinData);
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            var response = await SendRequestAsync(HttpMethod.Post, "/pins", pinData).ConfigureAwait(false);
+            var responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             if (response.IsSuccessStatusCode)
             {
                 if (string.IsNullOrWhiteSpace(responseContent))
                 {
+                    // Some successful responses might return empty body
                     return "created (no ID returned in response body)";
                 }
 
                 try
                 {
-                    PinResponse pinResponse = JsonConvert.DeserializeObject<PinResponse>(responseContent);
-                    return pinResponse.id ?? "created (ID not found in response)";
+                    var pinResponse = JsonConvert.DeserializeObject<PinResponse>(responseContent);
+                    return pinResponse?.id ?? "created (ID not found in response)";
                 }
                 catch (JsonException ex)
                 {
-                    throw new Exception($"Deserialization failed: {ex.Message}. Response content: {responseContent}");
+                    throw new Exception(
+                        $"Deserialization failed: {ex.Message}. Response content: {responseContent}");
                 }
             }
-            else
-            {
-                throw new Exception($"Pinterest API error: {response.StatusCode} - {responseContent}");
-            }
+
+            throw new Exception($"Pinterest API error: {response.StatusCode} - {responseContent}");
         }
 
         private async Task<HttpResponseMessage> SendRequestAsync(HttpMethod method, string path, object data)
         {
             using (var httpClient = new HttpClient())
             {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-                httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                httpClient.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", accessToken);
+                httpClient.DefaultRequestHeaders.Accept.Add(
+                    new MediaTypeWithQualityHeaderValue("application/json"));
 
                 var request = new HttpRequestMessage(method, $"{baseUrl}{path}");
 
                 if (data != null)
                 {
-                    request.Content = new StringContent(JsonConvert.SerializeObject(data), Encoding.UTF8, "application/json");
+                    var json = JsonConvert.SerializeObject(data);
+                    request.Content = new StringContent(json, Encoding.UTF8, "application/json");
                 }
 
-                return await httpClient.SendAsync(request);
+                return await httpClient.SendAsync(request).ConfigureAwait(false);
             }
         }
 

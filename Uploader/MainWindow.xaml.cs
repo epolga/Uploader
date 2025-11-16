@@ -1,8 +1,12 @@
-﻿// MainWindow.xaml.cs
+﻿using Amazon;
 using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.DocumentModel;
 using Amazon.DynamoDBv2.Model;
 using Amazon.S3;
+using Amazon.S3.Model;
 using Amazon.S3.Transfer;
+using Amazon.SimpleEmail;
+using Amazon.SimpleEmail.Model;
 using iTextSharp.text.pdf.codec;
 using System;
 using System.Collections.Generic;
@@ -14,15 +18,8 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using UploadPatterns;
-using Amazon.SimpleEmail.Model;
-using Amazon.SimpleEmail;
-using Message = Amazon.SimpleEmail.Model.Message;
-using Amazon.S3.Model;
-using Amazon;
-using Amazon.DynamoDBv2.DocumentModel;
 using Uploader.Helpers;
-using System.Net.Http; // If not already present
-using Newtonsoft.Json; // If not already present
+using Message = Amazon.SimpleEmail.Model.Message; // Explicit alias for SES Message
 
 namespace Uploader
 {
@@ -32,23 +29,25 @@ namespace Uploader
         private readonly AmazonDynamoDBClient dynamoDbClient = new AmazonDynamoDBClient();
         private readonly AmazonS3Client s3Client = new AmazonS3Client();
         private readonly AmazonSimpleEmailServiceClient sesClient = new AmazonSimpleEmailServiceClient();
+
         string m_strImageFileName = string.Empty;
         string m_strBatchFolder = string.Empty;
         static string m_photoPrefix = "photos";
         int m_iAlbumId = 0;
+
         required public PatternInfo m_patternInfo;
         required public string m_strAlbumPartitionKey;
+
         EC2Helper m_ec2Helper = new EC2Helper(RegionEndpoint.USEast1, "cross-stitch-env");
         S3Helper m_s3Helper = new S3Helper(RegionEndpoint.USEast1, "cross-stitch-designs");
-        private readonly PinterestHelper pinterestHelper = new PinterestHelper(); // Add this
-        TransferUtility m_s3TransferUtility;
 
+        private readonly PinterestHelper pinterestHelper = new PinterestHelper();
+        TransferUtility m_s3TransferUtility;
 
         public MainWindow()
         {
             InitializeComponent();
             m_s3TransferUtility = new TransferUtility(s3Client);
-
         }
 
         void SetAlbumInfo(int albumId)
@@ -68,7 +67,6 @@ namespace Uploader
             GetImage(strPDFFile);
         }
 
-
         private void BtnSelectFolder_Click(object sender, RoutedEventArgs e)
         {
             using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
@@ -82,72 +80,67 @@ namespace Uploader
                     m_strImageFileName = Path.Combine(m_strBatchFolder, "4.jpg");
 
                     LoadAlbumId();
-
                     GetPDF(Path.Combine(m_strBatchFolder, "1.pdf"));
                 }
             }
         }
-        
+
         string GetSccFile()
         {
-            // Find .scc file for DesignName
             string? sccFile = Directory.GetFiles(m_strBatchFolder, "*.scc").FirstOrDefault();
             if (sccFile == null)
-            {
                 throw new Exception(".scc file expected.");
-            }
             return sccFile;
         }
 
         async Task<int> GetMaxGlobalPage()
         {
-            // Get max NGlobalPage
             var maxGlobalPageRequest = new QueryRequest
             {
                 TableName = "CrossStitchItems",
                 IndexName = "Designs-index",
                 KeyConditionExpression = "EntityType = :et",
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                    {
-                        { ":et", new AttributeValue { S = "DESIGN" } }
-                    },
+                {
+                    { ":et", new AttributeValue { S = "DESIGN" } }
+                },
                 ScanIndexForward = false,
                 Limit = 1,
                 ProjectionExpression = "NGlobalPage"
             };
+
             var maxGlobalPageResponse = await dynamoDbClient.QueryAsync(maxGlobalPageRequest);
-            int nGlobalPage = maxGlobalPageResponse.Items.Count > 0
+            return maxGlobalPageResponse.Items.Count > 0
                 ? int.Parse(maxGlobalPageResponse.Items[0]["NGlobalPage"].N)
                 : 0;
-            return nGlobalPage;
         }
 
         async Task<string> GetNPage()
         {
-            // Get max NPage for the album
             var maxNPageRequest = new QueryRequest
             {
                 TableName = "CrossStitchItems",
                 KeyConditionExpression = "ID = :id",
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                    {
-                        { ":id", new AttributeValue { S = m_strAlbumPartitionKey } }
-                    },
+                {
+                    { ":id", new AttributeValue { S = m_strAlbumPartitionKey } }
+                },
                 ScanIndexForward = false,
                 Limit = 1,
                 ProjectionExpression = "NPage"
             };
+
             var maxNPageResponse = await dynamoDbClient.QueryAsync(maxNPageRequest);
             int maxNPage = 0;
+
             if (maxNPageResponse.Items.Count > 0 && maxNPageResponse.Items[0].ContainsKey("NPage"))
             {
                 string maxNPageStr = maxNPageResponse.Items[0]["NPage"].S;
                 string trimmed = maxNPageStr.TrimStart('0');
                 maxNPage = string.IsNullOrEmpty(trimmed) ? 0 : int.Parse(trimmed);
             }
-            int newNPageNum = maxNPage + 1;
-            string nPage = newNPageNum.ToString("D5"); // Pad with leading zeros to 5 characters
-            return nPage;
+
+            return (maxNPage + 1).ToString("D5");
         }
 
         async Task<int> GetDesignId()
@@ -158,138 +151,149 @@ namespace Uploader
                 IndexName = "DesignsByID-index",
                 KeyConditionExpression = "EntityType = :et",
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                    {
-                        { ":et", new AttributeValue { S = "DESIGN" } }
-                    },
+                {
+                    { ":et", new AttributeValue { S = "DESIGN" } }
+                },
                 ScanIndexForward = false,
                 Limit = 1,
                 ProjectionExpression = "DesignID"
             };
+
             var maxDesignIdResponse = await dynamoDbClient.QueryAsync(maxDesignIdRequest);
-            int designId = maxDesignIdResponse.Items.Count > 0
+            return maxDesignIdResponse.Items.Count > 0
                 ? int.Parse(maxDesignIdResponse.Items[0]["DesignID"].N) + 1
                 : 1;
-            return designId;
         }
 
         async void UploadChart(int designId, string sccFilePath)
         {
             string paddedDesignId = designId.ToString("D5");
-            string sccKey = $"charts/{paddedDesignId}_{m_patternInfo.Title}.scc";
-            var sccUploadRequest = new TransferUtilityUploadRequest
+            string key = $"charts/{paddedDesignId}_{m_patternInfo.Title}.scc";
+
+            await m_s3TransferUtility.UploadAsync(new TransferUtilityUploadRequest
             {
                 FilePath = sccFilePath,
                 BucketName = m_strBucketName,
-                Key = sccKey,
+                Key = key,
                 ContentType = "text/scc"
-            };
-            
-            await m_s3TransferUtility.UploadAsync(sccUploadRequest);
+            });
         }
 
         async void UploadPDF(int designId)
         {
             string pdfFile = Path.Combine(m_strBatchFolder, "1.pdf");
             if (!File.Exists(pdfFile))
-            {
                 throw new Exception("1.pdf not found.");
-            }
 
             string pdfKey = $"pdfs/{m_iAlbumId}/Stitch{designId}_Kit.pdf";
-            var pdfUploadRequest = new TransferUtilityUploadRequest
+
+            await m_s3TransferUtility.UploadAsync(new TransferUtilityUploadRequest
             {
                 FilePath = pdfFile,
                 BucketName = m_strBucketName,
                 Key = pdfKey,
                 ContentType = "application/pdf"
-            };
-            await m_s3TransferUtility.UploadAsync(pdfUploadRequest);
+            });
         }
 
         async void UploadImage(int iDesignId)
         {
             string photoKey = GetPhotoKey(iDesignId);
 
-            var photoUploadRequest = new TransferUtilityUploadRequest
+            await m_s3TransferUtility.UploadAsync(new TransferUtilityUploadRequest
             {
                 FilePath = m_strImageFileName,
                 BucketName = m_strBucketName,
                 Key = photoKey,
-                ContentType = "image/jpeg",
-            };
-            await m_s3TransferUtility.UploadAsync(photoUploadRequest);
+                ContentType = "image/jpeg"
+            });
         }
 
         void InsertItemIntoDynamoDB(string nPage, int designId, int nGlobalPage)
         {
-            var putItemRequest = new PutItemRequest
+            var request = new PutItemRequest
             {
                 TableName = "CrossStitchItems",
                 Item = new Dictionary<string, AttributeValue>
-                    {
-                        { "ID", new AttributeValue { S = m_strAlbumPartitionKey } },
-                        { "NPage", new AttributeValue { S = nPage } },
-                        { "AlbumID", new AttributeValue { N = m_iAlbumId.ToString() } },
-                        { "Caption", new AttributeValue { S = m_patternInfo.Title } },
-                        { "Description", new AttributeValue { S = m_patternInfo.Description } },
-                        { "DesignID", new AttributeValue { N = designId.ToString() } },
-                        { "EntityType", new AttributeValue { S = "DESIGN" } },
-                        { "Height", new AttributeValue { N = m_patternInfo.Height.ToString()} },
-                        { "NColors", new AttributeValue { N = m_patternInfo.NColors.ToString()} },
-                        { "NDownloaded", new AttributeValue { N = "0"} },
-                        { "NGlobalPage", new AttributeValue { N = nGlobalPage.ToString() } },
-                        { "Notes", new AttributeValue { S = m_patternInfo.Notes } },
-                        { "Width", new AttributeValue { N = m_patternInfo.Width.ToString()} },
-                    }
+                {
+                    { "ID", new AttributeValue { S = m_strAlbumPartitionKey } },
+                    { "NPage", new AttributeValue { S = nPage } },
+                    { "AlbumID", new AttributeValue { N = m_iAlbumId.ToString() } },
+                    { "Caption", new AttributeValue { S = m_patternInfo.Title } },
+                    { "Description", new AttributeValue { S = m_patternInfo.Description } },
+                    { "DesignID", new AttributeValue { N = designId.ToString() } },
+                    { "EntityType", new AttributeValue { S = "DESIGN" } },
+                    { "Height", new AttributeValue { N = m_patternInfo.Height.ToString() } },
+                    { "NColors", new AttributeValue { N = m_patternInfo.NColors.ToString() } },
+                    { "NDownloaded", new AttributeValue { N = "0" } },
+                    { "NGlobalPage", new AttributeValue { N = nGlobalPage.ToString() } },
+                    { "Notes", new AttributeValue { S = m_patternInfo.Notes } },
+                    { "Width", new AttributeValue { N = m_patternInfo.Width.ToString() } },
+                }
             };
-            dynamoDbClient.PutItemAsync(putItemRequest);
+
+            dynamoDbClient.PutItemAsync(request);
         }
-        
+
         async Task<string> CreatePinterestPin(int iDesignId)
         {
-            string pinId = String.Empty;
+            string pinId = string.Empty;
             try
             {
-             /*   string strPhotoKey = GetPhotoKey(iDesignId);
+                string strPhotoKey = GetPhotoKey(iDesignId);
                 string imageUrl = $"https://{m_strBucketName}.s3.amazonaws.com/{strPhotoKey}";
 
+                txtStatus.Text += $"[Pinterest] Creating pin for design {iDesignId}...\r\n";
+                txtStatus.Text += $"[Pinterest] Image URL: {imageUrl}\r\n";
+
                 pinId = await pinterestHelper.CreatePinAsync(imageUrl, m_patternInfo);
-                txtStatus.Text += $"Pinterest Pin created successfully (ID: {pinId}).\r\n";*/
+
+                txtStatus.Text += $"[Pinterest] Pin created successfully. ID: {pinId}\r\n";
             }
             catch (Exception pinEx)
             {
-                txtStatus.Text += $"Pinterest Pin creation failed: {pinEx.Message}\r\n";
+                txtStatus.Text += $"[Pinterest] Pin creation failed: {pinEx.Message}\r\n";
+                txtStatus.Text += $"[Pinterest] Exception details: {pinEx}\r\n";
             }
             return pinId;
         }
 
         void SendNotificationMailToAdmin(int iDesignId, string pinId)
-        {   
+        {
             var emailRequest = new SendEmailRequest
             {
                 Source = ConfigurationManager.AppSettings["SenderEmail"],
-                Destination = new Destination { ToAddresses = new List<string> { ConfigurationManager.AppSettings["AdminEmail"] } },
+                Destination = new Destination
+                {
+                    ToAddresses = new List<string> { ConfigurationManager.AppSettings["AdminEmail"] }
+                },
                 Message = new Message
                 {
                     Subject = new Content("Upload Successful"),
-                    Body = new Body { Text = new Content($"The upload for album {m_iAlbumId} design {iDesignId} ({m_patternInfo.Title}) pinId {pinId} was successful.") }
+                    Body = new Body
+                    {
+                        Text = new Content(
+                            $"The upload for album {m_iAlbumId} design {iDesignId} ({m_patternInfo.Title}) pinId {pinId} was successful.")
+                    }
                 }
             };
+
             sesClient.SendEmailAsync(emailRequest);
             txtStatus.Text = "Upload and insertion completed successfully. Starting reboot...\r\n";
         }
+
         private string GetPhotoKey(int iDesignId)
         {
             string photoFileName = Path.GetFileName(m_strImageFileName);
-            string photoKey = $"{m_photoPrefix}/{m_iAlbumId}/{iDesignId}/{photoFileName}";
-            return photoKey;
+            return $"{m_photoPrefix}/{m_iAlbumId}/{iDesignId}/{photoFileName}";
         }
+
         private void LoadAlbumId()
         {
-            string? albumFile = Directory.GetFiles(m_strBatchFolder, "*.txt").FirstOrDefault(); ;
+            string? albumFile = Directory.GetFiles(m_strBatchFolder, "*.txt").FirstOrDefault();
 
             if (albumFile != null)
-            {    
+            {
                 string albumIdStr = Path.GetFileNameWithoutExtension(albumFile);
                 if (int.TryParse(albumIdStr, out int albumId))
                 {
@@ -298,29 +302,33 @@ namespace Uploader
                 }
                 else
                 {
-                    System.Windows.MessageBox.Show("Invalid AlbumID in .txt file.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    System.Windows.MessageBox.Show("Invalid AlbumID in .txt file.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             else
             {
-                System.Windows.MessageBox.Show("Exactly one .txt file expected for AlbumID.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show("Exactly one .txt file expected for AlbumID.", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
-
         }
 
         private async void BtnUpload_Click(object sender, RoutedEventArgs e)
         {
-            if(m_patternInfo == null)
+            if (m_patternInfo == null)
             {
-                txtStatus.Text = "Extract pdf info before";
-            }
-            if (string.IsNullOrEmpty(m_strBatchFolder) || string.IsNullOrEmpty(txtAlbumNumber.Text))
-            {
-                System.Windows.MessageBox.Show("Please select a folder and ensure AlbumID is loaded.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                txtStatus.Text = "Extract PDF info before upload.\r\n";
                 return;
             }
 
-            txtStatus.Text = "Processing...";
+            if (string.IsNullOrEmpty(m_strBatchFolder) || string.IsNullOrEmpty(txtAlbumNumber.Text))
+            {
+                System.Windows.MessageBox.Show("Please select a folder and ensure AlbumID is loaded.",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            txtStatus.Text = "Processing...\r\n";
 
             try
             {
@@ -328,36 +336,82 @@ namespace Uploader
                 string strNPage = await GetNPage();
                 string sccFile = GetSccFile();
                 int iDesignId = await GetDesignId();
-                
+
+                txtStatus.Text += $"[Upload] DesignID: {iDesignId}, NPage: {strNPage}, NGlobalPage: {nGlobalPage}\r\n";
+
                 UploadChart(iDesignId, sccFile);
-
                 UploadPDF(iDesignId);
-
                 UploadImage(iDesignId);
-
                 InsertItemIntoDynamoDB(strNPage, iDesignId, nGlobalPage);
 
-                string strPinID = await CreatePinterestPin(iDesignId);
+                txtStatus.Text += "[Upload] Files uploaded and DynamoDB item inserted.\r\n";
 
-                SendNotificationMailToAdmin(iDesignId, strPinID);
+                string pinId = await CreatePinterestPin(iDesignId);
+                SendNotificationMailToAdmin(iDesignId, pinId);
 
-                await m_ec2Helper.RebootInstancesRequest(msg => Dispatcher.Invoke(() => txtStatus.Text += msg));
+                await m_ec2Helper.RebootInstancesRequest(
+                    msg => Dispatcher.Invoke(() => txtStatus.Text += msg));
             }
             catch (Exception ex)
             {
-                txtStatus.Text = $"Operation failed: {ex.Message}";
-                System.Windows.MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                txtStatus.Text += $"[Upload] Operation failed: {ex.Message}\r\n";
+                txtStatus.Text += $"[Upload] Exception details: {ex}\r\n";
+
+                System.Windows.MessageBox.Show($"An error occurred: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private List<System.Drawing.Image> ExtractImages(String PDFSourcePath)
+        private async void BtnTestPinterest_Click(object sender, RoutedEventArgs e)
+        {
+            txtStatus.Text += "[Test] Starting Pinterest integration test...\r\n";
+
+            try
+            {
+                if (m_patternInfo == null)
+                {
+                    txtStatus.Text += "[Test] PatternInfo is null. Load a PDF first.\r\n";
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(m_strImageFileName) || !File.Exists(m_strImageFileName))
+                {
+                    txtStatus.Text += "[Test] Image file not found. Select folder and load PDF first.\r\n";
+                    return;
+                }
+
+                string testKey = $"test/pinterest/{DateTime.UtcNow:yyyyMMddHHmmssfff}.jpg";
+                txtStatus.Text += $"[Test] Uploading test image to S3 key: {testKey}\r\n";
+
+                await m_s3TransferUtility.UploadAsync(new TransferUtilityUploadRequest
+                {
+                    FilePath = m_strImageFileName,
+                    BucketName = m_strBucketName,
+                    Key = testKey,
+                    ContentType = "image/jpeg"
+                });
+
+                string imageUrl = $"https://{m_strBucketName}.s3.amazonaws.com/{testKey}";
+                txtStatus.Text += $"[Test] Test image URL: {imageUrl}\r\n";
+                txtStatus.Text += "[Test] Calling Pinterest API...\r\n";
+
+                string pinId = await pinterestHelper.CreatePinAsync(imageUrl, m_patternInfo);
+
+                txtStatus.Text += $"[Test] Pinterest Pin created successfully. ID: {pinId}\r\n";
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text += $"[Test] Pinterest test failed: {ex.Message}\r\n";
+                txtStatus.Text += $"[Test] Exception details: {ex}\r\n";
+            }
+        }
+
+        private List<System.Drawing.Image> ExtractImages(string PDFSourcePath)
         {
             List<System.Drawing.Image> ImgList = new List<System.Drawing.Image>();
 
-            iTextSharp.text.pdf.RandomAccessFileOrArray RAFObj = null;
-            iTextSharp.text.pdf.PdfReader PDFReaderObj = null;
-            iTextSharp.text.pdf.PdfObject PDFObj = null;
-            iTextSharp.text.pdf.PdfStream PDFStreamObj = null;
+            iTextSharp.text.pdf.RandomAccessFileOrArray? RAFObj = null;
+            iTextSharp.text.pdf.PdfReader? PDFReaderObj = null;
 
             try
             {
@@ -366,48 +420,44 @@ namespace Uploader
 
                 for (int i = 0; i <= PDFReaderObj.XrefSize - 1; i++)
                 {
-                    PDFObj = PDFReaderObj.GetPdfObject(i);
+                    var PDFObj = PDFReaderObj.GetPdfObject(i);
 
                     if ((PDFObj != null) && PDFObj.IsStream())
                     {
-                        PDFStreamObj = (iTextSharp.text.pdf.PdfStream)PDFObj;
-                        iTextSharp.text.pdf.PdfObject subtype = PDFStreamObj.Get(iTextSharp.text.pdf.PdfName.SUBTYPE);
+                        var PDFStreamObj = (iTextSharp.text.pdf.PdfStream)PDFObj;
+                        var subtype = PDFStreamObj.Get(iTextSharp.text.pdf.PdfName.SUBTYPE);
 
-                        if ((subtype != null) && subtype.ToString() == iTextSharp.text.pdf.PdfName.IMAGE.ToString())
+                        if ((subtype != null) &&
+                            subtype.ToString() == iTextSharp.text.pdf.PdfName.IMAGE.ToString())
                         {
                             try
                             {
+                                var PdfImageObj =
+                                    new iTextSharp.text.pdf.parser.PdfImageObject(
+                                        (iTextSharp.text.pdf.PRStream)PDFStreamObj);
 
-                                iTextSharp.text.pdf.parser.PdfImageObject PdfImageObj =
-                         new iTextSharp.text.pdf.parser.PdfImageObject((iTextSharp.text.pdf.PRStream)PDFStreamObj);
-
-                                System.Drawing.Image ImgPDF = PdfImageObj.GetDrawingImage();
-
-
-                                ImgList.Add(ImgPDF);
-
+                                ImgList.Add(PdfImageObj.GetDrawingImage());
                             }
-                            catch (Exception)
-                            {
-
-                            }
+                            catch { }
                         }
                     }
                 }
+
                 PDFReaderObj.Close();
             }
             catch (Exception ex)
             {
                 throw new Exception(ex.Message);
             }
+
             return ImgList;
         }
 
-        void GetImage(String strPDFFileName)
+        void GetImage(string strPDFFileName)
         {
             if (!File.Exists(strPDFFileName))
             {
-                ShowMessage(String.Format("No file {0}", strPDFFileName));
+                ShowMessage($"No file {strPDFFileName}");
                 return;
             }
 
@@ -418,8 +468,8 @@ namespace Uploader
                 return;
             }
 
-            Bitmap bitmap = new Bitmap(lstImages[0]);
-            bitmap.RotateFlip(RotateFlipType.RotateNoneFlipY);
+            System.Drawing.Bitmap bitmap = new System.Drawing.Bitmap(lstImages[0]);
+            bitmap.RotateFlip(System.Drawing.RotateFlipType.RotateNoneFlipY);
             ImageSource imageSource = ToBitmapSource(bitmap);
             imgBatch.Source = imageSource;
 
@@ -436,7 +486,6 @@ namespace Uploader
         void ShowMessage(string message)
         {
             System.Windows.MessageBox.Show(message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-
         }
 
         public static BitmapSource ToBitmapSource(System.Drawing.Bitmap source)
@@ -444,12 +493,10 @@ namespace Uploader
             using (MemoryStream stream = new MemoryStream())
             {
                 source.Save(stream, System.Drawing.Imaging.ImageFormat.Bmp);
-
                 stream.Position = 0;
+
                 BitmapImage result = new BitmapImage();
                 result.BeginInit();
-                // According to MSDN, "The default OnDemand cache option retains access to the stream until the image is needed."
-                // Force the bitmap to load right now so we can dispose the stream.
                 result.CacheOption = BitmapCacheOption.OnLoad;
                 result.StreamSource = stream;
                 result.EndInit();
@@ -462,6 +509,7 @@ namespace Uploader
         {
             var dynamoClient = new AmazonDynamoDBClient(RegionEndpoint.USEast1);
             var table = Table.LoadTable(dynamoClient, "CrossStitchItems");
+
             var listRequest = new ListObjectsV2Request
             {
                 BucketName = "cross-stitch-designs",
@@ -469,37 +517,40 @@ namespace Uploader
             };
 
             var paginator = s3Client.Paginators.ListObjectsV2(listRequest);
-            File.AppendAllLines("DesignToAlbumMap.csv", new string[] { "DesignID,AlbumID" });
+            File.AppendAllLines("DesignToAlbumMap.csv", new[] { "DesignID,AlbumID" });
+
             string prevDesignStr = "";
             string prevAlbum = "";
-            SortedDictionary<int, int> designToAlbumMap = new SortedDictionary<int, int>();
+
+            SortedDictionary<int, int> designToAlbumMap = new();
+
             await foreach (var obj in paginator.S3Objects)
             {
                 var key = obj.Key;
                 if (key.Contains("by-page") || key.Contains("private"))
                     continue;
+
                 var parts = key.Split('/');
                 if (parts.Length < 4) continue;
+
                 var album = parts[1];
                 var designStr = parts[2];
+
                 if (designStr == prevDesignStr && album == prevAlbum)
                     continue;
-                var designId = 0;
-                if (!Int32.TryParse(designStr, out designId))
-                    continue;
-                var albumId = 0;
-                if (!Int32.TryParse(album, out albumId))
-                    continue;
-                designToAlbumMap[designId] = albumId;
 
+                if (!int.TryParse(designStr, out var designId)) continue;
+                if (!int.TryParse(album, out var albumId)) continue;
+
+                designToAlbumMap[designId] = albumId;
                 prevDesignStr = designStr;
                 prevAlbum = album;
             }
+
             foreach (var kvp in designToAlbumMap)
             {
-                File.AppendAllLines("DesignToAlbumMap.csv", new string[] { $"{kvp.Key},{kvp.Value}" });
+                File.AppendAllLines("DesignToAlbumMap.csv", new[] { $"{kvp.Key},{kvp.Value}" });
             }
         }
-
     }
 }
