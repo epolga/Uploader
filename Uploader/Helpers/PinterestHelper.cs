@@ -33,12 +33,12 @@ namespace Uploader.Helpers
             }
         }
 
-        public async Task<string> CreatePinAsync(string imageUrl, PatternInfo patternInfo, string designName)
+        public async Task<string> CreatePinAsync(string imageUrl, PatternInfo patternInfo)
         {
             var pinData = new
             {
                 board_id = boardId,
-                title = patternInfo.Title ?? designName ?? "Default Title", // Ensure non-null
+                title = patternInfo.Title ?? "Default Title", // Ensure non-null
                 description = $"{patternInfo.Description ?? string.Empty}\nNotes: {patternInfo.Notes ?? string.Empty}\nDimensions: {patternInfo.Width}x{patternInfo.Height}, Colors: {patternInfo.NColors}",
                 media_source = new
                 {
