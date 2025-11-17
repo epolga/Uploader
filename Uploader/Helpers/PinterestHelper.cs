@@ -123,9 +123,9 @@ namespace Uploader.Helpers
             }
         }
 
-        public async void UploadPin()
+        private async Task<string> GetAccessToken()
         {
-
+            string strAccessToken = "";
             try
             {
                 string strRedirectUri = ConfigurationManager.AppSettings["PinterestRedirectUri"] ?? "http://localhost:8080/callback";
@@ -184,14 +184,27 @@ namespace Uploader.Helpers
 
                     var tokenJson = await tokenResponse.Content.ReadAsStringAsync();
                     var tokenData = JObject.Parse(tokenJson);
-                    AccessToken = tokenData["access_token"].ToString();
+                    strAccessToken = tokenData["access_token"].ToString();
                 }
 
+            }
+            catch
+            {
 
+            }
+            return strAccessToken;
+        }
+
+        public async void UploadPin()
+        {
+
+            try
+            {
+                 string strAccessToken = await GetAccessToken();
 
                 // Step 5: Create pin using public S3 image URL
                 string publicImageUrl = "https://cross-stitch-designs.s3.us-east-1.amazonaws.com/images/articles/cross-stitch-completed.jpg"; // Replace with actual S3 URL
-                await CreatePinAsync("https://www.cross-stitch-pattern.net", "Good Morning", "Good Morning", publicImageUrl, "257127528664615140");
+                await CreatePinAsync(strAccessToken, "https://www.cross-stitch-pattern.net", "Good Morning", "Good Morning", publicImageUrl, "257127528664615140");
 
             }
             catch (Exception ex)
@@ -200,12 +213,12 @@ namespace Uploader.Helpers
 
         }
 
-        private async Task CreatePinAsync(string link, string title, string description, string imageUrl, string boardId)
+        private async Task CreatePinAsync(string accessToken, string link, string title, string description, string imageUrl, string boardId)
         {
             using (var httpClient = new HttpClient())
             {
                 // Set authorization header with Bearer token
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {AccessToken}");
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
 
                 // Construct JSON payload for pin creation
                 var pinContent = new StringContent(JsonConvert.SerializeObject(new
