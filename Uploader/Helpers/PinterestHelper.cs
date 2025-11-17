@@ -15,24 +15,26 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using UploadPatterns; // PatternInfo
+using UploadPatterns;
+using System.Net;
+using System.Diagnostics;
+using Newtonsoft.Json.Linq; // PatternInfo
 
 namespace Uploader.Helpers
 {
     public class PinterestHelper
-    {
-        private readonly string accessToken;
+    {   
         private readonly string boardId;
-
+        private string AccessToken { get; set; }
         // Production Pinterest API base URL
         private readonly string baseUrl = "https://api.pinterest.com/v5";
 
         public PinterestHelper()
         {
-            accessToken = ConfigurationManager.AppSettings["PinterestAccessToken"] ?? string.Empty;
+            AccessToken = ConfigurationManager.AppSettings["PinterestAccessToken"] ?? string.Empty;
             boardId = ConfigurationManager.AppSettings["PinterestBoardId"] ?? string.Empty;
 
-            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(boardId))
+            if (string.IsNullOrEmpty(AccessToken) || string.IsNullOrEmpty(boardId))
             {
                 throw new InvalidOperationException(
                     "Pinterest access token or board ID not configured in App.config (keys: PinterestAccessToken, PinterestBoardId).");
@@ -105,7 +107,7 @@ namespace Uploader.Helpers
             using (var httpClient = new HttpClient())
             {
                 httpClient.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
+                    new AuthenticationHeaderValue("Bearer", AccessToken);
                 httpClient.DefaultRequestHeaders.Accept.Add(
                     new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -120,6 +122,122 @@ namespace Uploader.Helpers
                 return await httpClient.SendAsync(request).ConfigureAwait(false);
             }
         }
+
+        public async void UploadPin()
+        {
+
+            try
+            {
+                string strRedirectUri = ConfigurationManager.AppSettings["PinterestRedirectUri"] ?? "http://localhost:8080/callback";
+                string strAuthUrl = ConfigurationManager.AppSettings["PinterestAuthUrl"] ?? "https://www.pinterest.com/oauth/";
+                string strClientId = ConfigurationManager.AppSettings["PinterestClientId"] ?? "";
+                string strClientSecret = ConfigurationManager.AppSettings["PinterestClientSecret"] ?? "";
+                string strScope = ConfigurationManager.AppSettings["PinterestScope"] ?? "pins:write";
+                string strTokenUrl = ConfigurationManager.AppSettings["PinterestTokenUrl"] ?? "https://api.pinterest.com/v5/oauth/token";
+
+                // Step 1: Start local HTTP listener for redirect
+                var listener = new HttpListener();
+                listener.Prefixes.Add(strRedirectUri.Replace("callback", "")); // Listen on http://localhost:8080/
+                listener.Start();
+
+                // Step 2: Construct authorization URL and open in default browser for user consent
+                var state = Guid.NewGuid().ToString(); // CSRF protection token
+                var authRequestUrl = $"{strAuthUrl}?response_type=code&client_id={strClientId}&redirect_uri={strRedirectUri}&scope={strScope}&state={state}";
+                Process.Start(new ProcessStartInfo(authRequestUrl) { UseShellExecute = true });
+
+                // Step 3: Await redirect and extract authorization code
+                var context = await listener.GetContextAsync();
+                var request = context.Request;
+                var response = context.Response;
+
+                var code = request.QueryString["code"];
+                var returnedState = request.QueryString["state"];
+
+                if (string.IsNullOrEmpty(code) || returnedState != state)
+                {
+                    throw new Exception("Invalid authorization response.");
+                }
+
+                // Send success message to browser and close listener
+                var buffer = Encoding.UTF8.GetBytes("Authorization successful. You may close this window.");
+                response.ContentLength64 = buffer.Length;
+                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                response.OutputStream.Close();
+                listener.Stop();
+
+
+                // Step 4: Exchange authorization code for access token
+                using (var httpClient = new HttpClient())
+                {
+                    var tokenRequest = new HttpRequestMessage(HttpMethod.Post, strTokenUrl);
+                    tokenRequest.Headers.Add("Authorization", "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{strClientId}:{strClientSecret}")));
+                    var content = new FormUrlEncodedContent(new[]
+                    {
+                        new KeyValuePair<string, string>("grant_type", "authorization_code"),
+                        new KeyValuePair<string, string>("code", code),
+                        new KeyValuePair<string, string>("redirect_uri", strRedirectUri)
+                    });
+                    tokenRequest.Content = content;
+
+                    var tokenResponse = await httpClient.SendAsync(tokenRequest);
+                    tokenResponse.EnsureSuccessStatusCode();
+
+                    var tokenJson = await tokenResponse.Content.ReadAsStringAsync();
+                    var tokenData = JObject.Parse(tokenJson);
+                    AccessToken = tokenData["access_token"].ToString();
+                }
+
+
+
+                // Step 5: Create pin using public S3 image URL
+                string publicImageUrl = "https://cross-stitch-designs.s3.us-east-1.amazonaws.com/images/articles/cross-stitch-completed.jpg"; // Replace with actual S3 URL
+                await CreatePinAsync("https://www.cross-stitch-pattern.net", "Good Morning", "Good Morning", publicImageUrl, "257127528664615140");
+
+            }
+            catch (Exception ex)
+            {
+            }
+
+        }
+
+        private async Task CreatePinAsync(string link, string title, string description, string imageUrl, string boardId)
+        {
+            using (var httpClient = new HttpClient())
+            {
+                // Set authorization header with Bearer token
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {AccessToken}");
+
+                // Construct JSON payload for pin creation
+                var pinContent = new StringContent(JsonConvert.SerializeObject(new
+                {
+                    board_id = boardId,
+                    link,
+                    title,
+                    description,
+                    media_source = new
+                    {
+                        source_type = "image_url",
+                        url = imageUrl
+                    }
+                }), Encoding.UTF8, "application/json");
+                string strPinsUrl = ConfigurationManager.AppSettings["PinterestPinsUrl"] ?? "https://api.pinterest.com/v5/pins";
+
+                // Send POST request to create the pin
+                var pinResponse = await httpClient.PostAsync(strPinsUrl, pinContent);
+
+                if (!pinResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await pinResponse.Content.ReadAsStringAsync();
+                    throw new Exception($"Pin creation failed: {pinResponse.StatusCode} - {errorContent}");
+                }
+
+                // Optional: Parse response to extract pin ID (for verification or logging)
+                var pinJson = await pinResponse.Content.ReadAsStringAsync();
+                var pinData = JObject.Parse(pinJson);
+                // Example: string pinId = pinData["id"].ToString();
+            }
+        }
+
 
         private class PinResponse
         {

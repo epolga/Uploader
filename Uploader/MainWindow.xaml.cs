@@ -364,6 +364,9 @@ namespace Uploader
 
         private async void BtnTestPinterest_Click(object sender, RoutedEventArgs e)
         {
+            pinterestHelper.UploadPin();
+            return;
+
             txtStatus.Text += "[Test] Starting Pinterest integration test...\r\n";
 
             try
