@@ -1,38 +1,43 @@
-﻿using Amazon;
+﻿using System;
+using System.Threading.Tasks;
+using Amazon;
 using Amazon.S3;
 using Amazon.S3.Model;
-using System;
-using System.Threading.Tasks;
 
 namespace Uploader.Helpers
 {
-    class S3Helper
+    /// <summary>
+    /// Small helper to upload/delete files in S3.
+    /// </summary>
+    public class S3Helper
     {
-        private readonly string m_strBucketName;// = "cross-stitch-designs";
-        //private readonly string s3PDFPrefix = "pdfs/";
-        //private readonly string localFolderPath = @"D:\FTPROOT\Kits";
-        private AmazonS3Client m_s3Client;
+        private readonly string _bucketName;
+        private readonly AmazonS3Client _s3Client;
 
         public S3Helper(RegionEndpoint regionEndpoint, string bucketName)
         {
-            m_s3Client = new AmazonS3Client(regionEndpoint);
-            m_strBucketName = bucketName;
+            _bucketName = bucketName ?? throw new ArgumentNullException(nameof(bucketName));
+            _s3Client = new AmazonS3Client(regionEndpoint);
         }
+
+        /// <summary>
+        /// Uploads a local PDF file to S3 at the given key.
+        /// </summary>
         public async Task UploadPdfAsync(string filePath, string s3Key, string localFolderPath)
         {
             try
             {
-                Console.WriteLine($"Uploading {filePath} to s3://{m_strBucketName}/{s3Key}");
+                Console.WriteLine($"Uploading {filePath} to s3://{_bucketName}/{s3Key}");
 
                 var putRequest = new PutObjectRequest
                 {
-                    BucketName = m_strBucketName,
+                    BucketName = _bucketName,
                     Key = s3Key,
                     FilePath = filePath,
-                    ContentType = "application/pdf" // Assuming all files are PDFs
+                    ContentType = "application/pdf"
                 };
 
-                var response = await m_s3Client.PutObjectAsync(putRequest);
+                var response = await _s3Client.PutObjectAsync(putRequest).ConfigureAwait(false);
                 Console.WriteLine($"Uploaded {s3Key} successfully. ETag: {response.ETag}");
             }
             catch (Exception ex)
@@ -41,25 +46,28 @@ namespace Uploader.Helpers
             }
         }
 
+        /// <summary>
+        /// Deletes an object from the S3 bucket.
+        /// </summary>
         public async Task DeleteFileAsync(string objectKey)
         {
             try
             {
                 var deleteRequest = new DeleteObjectRequest
                 {
-                    BucketName = m_strBucketName,
+                    BucketName = _bucketName,
                     Key = objectKey
                 };
 
-                var response = await m_s3Client.DeleteObjectAsync(deleteRequest);
+                var response = await _s3Client.DeleteObjectAsync(deleteRequest).ConfigureAwait(false);
 
                 if (response.HttpStatusCode == System.Net.HttpStatusCode.NoContent)
                 {
-                    Console.WriteLine($"Object '{objectKey}' deleted successfully from bucket '{m_strBucketName}'.");
+                    Console.WriteLine($"Object '{objectKey}' deleted successfully from bucket '{_bucketName}'.");
                 }
                 else
                 {
-                    Console.WriteLine($"Failed to delete object '{objectKey}' from bucket '{m_strBucketName}'. Status: {response.HttpStatusCode}");
+                    Console.WriteLine($"Failed to delete object '{objectKey}' from bucket '{_bucketName}'. Status: {response.HttpStatusCode}");
                 }
             }
             catch (AmazonS3Exception ex)
