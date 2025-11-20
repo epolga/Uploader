@@ -95,7 +95,7 @@ namespace Uploader
                     txtFolderPath.Text = _batchFolderPath;
                     _imageFilePath = Path.Combine(_batchFolderPath, "4.jpg");
 
-                    m_patternInfo = await CreatePatternInfo().ConfigureAwait(true);
+                    m_patternInfo = await CreatePatternInfo();
                     SetPatternInfoToUI(m_patternInfo);
 
                     string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
@@ -126,8 +126,8 @@ namespace Uploader
             var patternInfo = new PatternInfo(pdfPath);
 
             patternInfo.AlbumId = LoadAlbumId();
-            patternInfo.NPage = await GetNPage().ConfigureAwait(false);
-            patternInfo.DesignID = await GetDesignId().ConfigureAwait(false);
+            patternInfo.NPage = await GetNPage();
+            patternInfo.DesignID = await GetDesignId();
 
             return patternInfo;
         }
@@ -165,7 +165,7 @@ namespace Uploader
                 ProjectionExpression = "NGlobalPage"
             };
 
-            var response = await _dynamoDbClient.QueryAsync(request).ConfigureAwait(false);
+            var response = await _dynamoDbClient.QueryAsync(request);
 
             if (response.Items.Count > 0 && response.Items[0].ContainsKey("NGlobalPage"))
             {
@@ -193,7 +193,7 @@ namespace Uploader
                 ProjectionExpression = "NPage"
             };
 
-            var response = await _dynamoDbClient.QueryAsync(request).ConfigureAwait(false);
+            var response = await _dynamoDbClient.QueryAsync(request);
             int maxNPage = 0;
 
             if (response.Items.Count > 0 && response.Items[0].ContainsKey("NPage"))
@@ -225,7 +225,7 @@ namespace Uploader
                 ProjectionExpression = "DesignID"
             };
 
-            var response = await _dynamoDbClient.QueryAsync(request).ConfigureAwait(false);
+            var response = await _dynamoDbClient.QueryAsync(request);
 
             if (response.Items.Count > 0 && response.Items[0].ContainsKey("DesignID"))
             {
@@ -251,7 +251,7 @@ namespace Uploader
                 ContentType = "text/scc"
             };
 
-            await _s3TransferUtility.UploadAsync(request).ConfigureAwait(false);
+            await _s3TransferUtility.UploadAsync(request);
         }
 
         /// <summary>
@@ -275,7 +275,7 @@ namespace Uploader
                 ContentType = "application/pdf"
             };
 
-            await _s3TransferUtility.UploadAsync(request).ConfigureAwait(false);
+            await _s3TransferUtility.UploadAsync(request);
         }
 
         /// <summary>
@@ -293,7 +293,7 @@ namespace Uploader
                 ContentType = "image/jpeg"
             };
 
-            await _s3TransferUtility.UploadAsync(request).ConfigureAwait(false);
+            await _s3TransferUtility.UploadAsync(request);
         }
 
         /// <summary>
@@ -324,7 +324,7 @@ namespace Uploader
                 Item = item
             };
 
-            await _dynamoDbClient.PutItemAsync(request).ConfigureAwait(false);
+            await _dynamoDbClient.PutItemAsync(request);
         }
 
         /// <summary>
@@ -416,11 +416,11 @@ namespace Uploader
 
             try
             {
-                int nGlobalPage = await GetMaxGlobalPage().ConfigureAwait(false) + 1;
+                int nGlobalPage = await GetMaxGlobalPage() + 1;
                 string sccFile = GetSccFile();
 
                 // Recalculate DesignID again (kept same logic as original code).
-                m_patternInfo.DesignID = await GetDesignId().ConfigureAwait(false);
+                m_patternInfo.DesignID = await GetDesignId();
 
                 if (!int.TryParse(m_patternInfo.NPage, out var nPage))
                 {
@@ -429,15 +429,14 @@ namespace Uploader
 
                 txtStatus.Text += $"[Upload] DesignID: {m_patternInfo.DesignID}, NPage: {m_patternInfo.NPage}, NGlobalPage: {nGlobalPage}\r\n";
 
-                await UploadChartToS3(m_patternInfo.DesignID, sccFile).ConfigureAwait(false);
-                await UploadPdfToS3(m_patternInfo.DesignID).ConfigureAwait(false);
-                await UploadImageToS3(m_patternInfo.DesignID).ConfigureAwait(false);
-                await InsertItemIntoDynamoDbAsync(m_patternInfo.NPage, m_patternInfo.DesignID, nGlobalPage)
-                    .ConfigureAwait(false);
+                await UploadChartToS3(m_patternInfo.DesignID, sccFile);
+                await UploadPdfToS3(m_patternInfo.DesignID);
+                await UploadImageToS3(m_patternInfo.DesignID);
+                await InsertItemIntoDynamoDbAsync(m_patternInfo.NPage, m_patternInfo.DesignID, nGlobalPage);
 
                 txtStatus.Text += "[Upload] Files uploaded and DynamoDB item inserted.\r\n";
 
-                string pinId = await _pinterestHelper.UploadPinExampleAsync(m_patternInfo).ConfigureAwait(false);
+                string pinId = await _pinterestHelper.UploadPinExampleAsync(m_patternInfo);
 
                 SendNotificationMailToAdmin(m_patternInfo.DesignID, pinId);
 
@@ -462,7 +461,7 @@ namespace Uploader
             try
             {
                 var patternInfo = new PatternInfo(@"D:\Stitch Craft\Charts\ReadyCharts\2025_11_02\1.pdf");
-                patternInfo.PinId = await _pinterestHelper.UploadPinExampleAsync(patternInfo).ConfigureAwait(false);
+                patternInfo.PinId = await _pinterestHelper.UploadPinExampleAsync(patternInfo);
                 txtStatus.Text += $"[Test Pinterest] Pin created: {patternInfo.PinId}\r\n";
             }
             catch (Exception ex)
@@ -483,7 +482,7 @@ namespace Uploader
 
             try
             {
-                await creator.CreateBoardsAndCsvAsync(progress, CancellationToken.None).ConfigureAwait(true);
+                await creator.CreateBoardsAndCsvAsync(progress, CancellationToken.None);
                 txtStatus.Text += "Finished creating boards and CSV.\r\n";
             }
             catch (Exception ex)
@@ -494,6 +493,9 @@ namespace Uploader
             }
         }
 
+        /// <summary>
+        /// Renames Pinterest boards using AlbumBoards.csv.
+        /// </summary>
         private async void BtnRenameBoards_Click(object sender, RoutedEventArgs e)
         {
             txtStatus.Text = "Renaming Pinterest boards from CSV...\r\n";
@@ -516,7 +518,6 @@ namespace Uploader
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
 
         /// <summary>
         /// Extracts all images from a PDF file into a list of System.Drawing.Image.
@@ -653,7 +654,7 @@ namespace Uploader
 
             var designToAlbumMap = new SortedDictionary<int, int>();
 
-            await foreach (var obj in paginator.S3Objects.ConfigureAwait(false))
+            await foreach (var obj in paginator.S3Objects)
             {
                 var key = obj.Key;
                 if (key.Contains("by-page") || key.Contains("private"))
