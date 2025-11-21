@@ -205,7 +205,7 @@ namespace Uploader.Helpers
             }
 
             string description =
-                $"Cross stitch patterns from album {albumId}: {safeCaption}. " +
+                $"Cross stitch patterns from album {safeCaption}. " +
                 "Discover printable cross stitch charts and downloadable PDF patterns at Cross-Stitch-Pattern.net. " +
                 "Perfect for both beginners and experienced stitchers who love detailed embroidery designs.";
 

@@ -154,7 +154,7 @@ namespace Uploader
             {
                 // Hard-coded test path – adjust if needed
                 var info = new PatternInfo(@"D:\Stitch Craft\Charts\ReadyCharts\2025_11_02\1.pdf");
-                string pinId = await _pinterestHelper.UploadPinExampleAsync(info);
+                string pinId = await _pinterestHelper.UploadPinForPatternAsync(info);
 
                 txtStatus.Text += $"[Test Pinterest] Pin created: {pinId}\r\n";
             }
@@ -290,7 +290,7 @@ namespace Uploader
         private async Task RunFullUploadFlowAsync(PatternInfo patternInfo)
         {
             // 1. Calculate global page and next design ID
-            int maxGlobalPage = await GetMaxGlobalPageAsync().ConfigureAwait(false);
+            int maxGlobalPage = await GetMaxGlobalPageAsync();
             int nGlobalPage = maxGlobalPage + 1;
 
             string sccFile = GetSccFile();
@@ -310,7 +310,7 @@ namespace Uploader
                 nGlobalPage).ConfigureAwait(false);
 
             // 4. Create Pinterest pin
-            string pinId = await _pinterestHelper.UploadPinExampleAsync(patternInfo).ConfigureAwait(false);
+            string pinId = await _pinterestHelper.UploadPinForPatternAsync(patternInfo).ConfigureAwait(false);
 
             // 5. Notify admin via email
             await SendNotificationMailToAdminAsync(patternInfo.DesignID, pinId).ConfigureAwait(false);
