@@ -48,7 +48,7 @@ namespace Uploader.Helpers
         private string GetPatternUrl(PatternInfo patternInfo)
         {
             if (patternInfo == null) throw new ArgumentNullException(nameof(patternInfo));
-
+            int nPage = int.TryParse(patternInfo.NPage, out int parsedPage) ? parsedPage - 1 : 0;
             string slugTitle = (patternInfo.Title ?? string.Empty).Replace(' ', '-');
             return $"{slugTitle}-{patternInfo.AlbumId}-{patternInfo.NPage}-Free-Design.aspx";
         }
@@ -79,8 +79,9 @@ namespace Uploader.Helpers
             {
                 board_id = _boardId,
                 link = patternUrl,                       // use actual pattern page link
-                title = patternInfo.Title,
-                description = patternInfo.Description,
+                title = $"{patternInfo.Title} Cross Stitch Pattern – Easy Printable PDF",
+                alt_text = $"{patternInfo.Description} for FREE download",
+                description = patternInfo.Notes + "\nGet more printable cross stitch patterns at Cross-Stitch-Pattern.net.",
                 media_source = new
                 {
                     source_type = "image_url",

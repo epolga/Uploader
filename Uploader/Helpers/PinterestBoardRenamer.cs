@@ -70,11 +70,10 @@ namespace Uploader.Helpers
 
                 string newName = BuildSeoBoardName(caption);
                 string newDescription = BuildSeoBoardDescription(albumId, caption);
-
+                 
                 progress?.Report(
                     $"Renaming board {boardId}: '{caption}' => '{newName}'");
-
-                await RenameBoardAsync(httpClient, boardId, newName, newDescription, cancellationToken)
+                  await RenameBoardAsync(httpClient, boardId, newName, newDescription, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -153,14 +152,14 @@ namespace Uploader.Helpers
 
             // Fallback if caption is empty
             if (baseCaption.Length == 0)
-                baseCaption = "Cross Stitch";
+                baseCaption = "Cross Stitch Free";
 
             // Always add main keyword, but keep very short
             string result;
 
-            if (baseCaption.IndexOf("cross stitch", StringComparison.OrdinalIgnoreCase) < 0)
+            if (baseCaption.IndexOf("Cross Stitch Free", StringComparison.OrdinalIgnoreCase) < 0)
             {
-                result = $"{baseCaption} Cross Stitch";
+                result = $"{baseCaption} Cross Stitch Free";
             }
             else
             {
