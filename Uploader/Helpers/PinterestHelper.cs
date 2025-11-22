@@ -31,10 +31,9 @@ namespace Uploader.Helpers
     {
         private const string PinterestApiBaseUrl = "https://api.pinterest.com/v5";
 
-        private readonly string _siteBaseUrl;
-        private readonly string _imageBaseUrl;
         private readonly string _boardsCsvPath;
         private readonly string? _defaultBoardId;
+        private readonly PatternLinkHelper _linkHelper = new PatternLinkHelper();
 
         // Lazy cache: AlbumID (4-digit string) -> BoardID
         private Dictionary<string, string>? _boardIdByAlbumId;
@@ -43,31 +42,6 @@ namespace Uploader.Helpers
         private readonly PinterestOAuthClient _pinterestOAuthClient = new PinterestOAuthClient();
         public PinterestHelper()
         {
-            // Base URL of your site, used for the "link" field of the Pin.
-            // Example: https://www.cross-stitch-pattern.net
-            _siteBaseUrl =
-                ConfigurationManager.AppSettings["SiteBaseUrl"] ??
-                "https://www.cross-stitch-pattern.net";
-
-            // Public S3 base URL for images.
-            // Example: https://cross-stitch-designs.s3.amazonaws.com
-            // If not provided, build from S3 bucket name or fall back to a default.
-            var configuredImageBase =
-                ConfigurationManager.AppSettings["S3PublicBaseUrl"];
-
-            if (!string.IsNullOrWhiteSpace(configuredImageBase))
-            {
-                _imageBaseUrl = configuredImageBase.TrimEnd('/');
-            }
-            else
-            {
-                var bucketName =
-                    ConfigurationManager.AppSettings["S3BucketName"] ??
-                    "cross-stitch-designs";
-
-                _imageBaseUrl = $"https://{bucketName}.s3.amazonaws.com";
-            }
-
             // CSV with mapping AlbumID,AlbumCaption,BoardID
             // Created previously by PinterestBoardCreator.
             _boardsCsvPath =
@@ -104,8 +78,8 @@ namespace Uploader.Helpers
                 await GetBoardIdForAlbumAsync(pattern.AlbumId).ConfigureAwait(false);
 
             // 2. Build URLs
-            string patternUrl = BuildPatternUrl(pattern);
-            string imageUrl = BuildImageUrl(pattern.DesignID, pattern.AlbumId);
+            string patternUrl = _linkHelper.BuildPatternUrl(pattern);
+            string imageUrl = _linkHelper.BuildImageUrl(pattern.DesignID, pattern.AlbumId);
 
             // 3. Analyze theme and build SEO text
             var theme = DetectTheme(pattern);
@@ -275,27 +249,6 @@ namespace Uploader.Helpers
         #endregion
 
         #region URLs
-
-        private string BuildPatternUrl(PatternInfo patternInfo)
-        {
-            string caption = patternInfo.Title.Replace(' ', '-');
-            // Example: https://www.cross-stitch-pattern.net/Good-Morning-9-289-Free-Design.aspx
-            Int32.TryParse(patternInfo.NPage, out int nPage);
-            string baseUrl = _siteBaseUrl.TrimEnd('/');
-            return $"{baseUrl}/{caption}-{patternInfo.AlbumId}-{nPage}-Free-Design.aspx";
-        }
-
-        private string BuildImageUrl(int designId, int albumId)
-        {
-            // Match the same S3 structure you use when uploading thumbnails.
-            // Example: {imageBaseUrl}/images/designs/photos/{albumId}/{designId}/4.jpg
-            string photoFileName = "4.jpg";
-            string photoPrefix =
-                ConfigurationManager.AppSettings["S3PhotoPrefix"] ??
-                "images/designs/photos";
-
-            return $"{_imageBaseUrl}/{photoPrefix}/{albumId}/{designId}/{photoFileName}";
-        }
 
         #endregion
 

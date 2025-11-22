@@ -22,22 +22,24 @@ namespace Uploader.Helpers
             _environmentName = environmentName;
         }
 
-        public async Task RebootInstancesRequest(Action<string>? statusCallback = null)
+        public async Task<bool> RebootInstancesRequest(Action<string>? statusCallback = null)
         {
             if (string.IsNullOrEmpty(_environmentName))
-                return;
+                return false;
 
             var instanceIds = await GetInstanceIdsByTagAsync(_ec2Client, "Name", _environmentName);
             if (!instanceIds.Any())
             {
                 statusCallback?.Invoke($"No instances found for environment '{_environmentName}'.\n");
-                return;
+                return false;
             }
 
             bool success = await RebootInstancesAsync(_ec2Client, instanceIds, statusCallback);
             statusCallback?.Invoke(success
                 ? "All instances rebooted successfully.\n"
                 : "Failed to reboot one or more instances.\n");
+
+            return success;
         }
 
         /// <summary>

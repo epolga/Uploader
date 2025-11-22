@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Security.Cryptography;
+using System.Text;
 using Amazon;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.DocumentModel;
@@ -21,7 +23,6 @@ using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
 using UploadPatterns;
 using Uploader.Helpers;
-using Message = Amazon.SimpleEmail.Model.Message;
 using MessageBox = System.Windows.MessageBox;
 using Path = System.IO.Path;
 
@@ -34,7 +35,7 @@ namespace Uploader
     /// - Uploads SCC, PDF and JPG to S3
     /// - Inserts item into DynamoDB
     /// - Creates a Pinterest pin
-    /// - Sends notification email and reboots EC2 environment
+    /// - Sends notification email, reboots EC2 environment, and notifies users
     /// </summary>
     public partial class MainWindow : Window
     {
@@ -52,6 +53,8 @@ namespace Uploader
             new S3Helper(RegionEndpoint.USEast1, "cross-stitch-designs");
 
         private readonly PinterestHelper _pinterestHelper = new PinterestHelper();
+        private readonly PatternLinkHelper _linkHelper = new PatternLinkHelper();
+        private readonly EmailHelper _emailHelper = new EmailHelper();
         private readonly TransferUtility _s3TransferUtility;
 
         private string _imageFilePath = string.Empty;
@@ -313,10 +316,24 @@ namespace Uploader
             await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID).ConfigureAwait(false);
 
             // 6. Reboot EC2 environment (status text is updated via callback which marshals to UI)
-            await _ec2Helper.RebootInstancesRequest(msg =>
+            bool rebooted = await _ec2Helper.RebootInstancesRequest(msg =>
             {
                 Dispatcher.BeginInvoke(new Action(() => { txtStatus.Text += msg; }));
             }).ConfigureAwait(false);
+
+            if (rebooted)
+            {
+                var userEmails = await FetchAllUserEmailsAsync().ConfigureAwait(false);
+                await SendNotificationMailToUsersAsync(PatternInfo.DesignID, PatternInfo.PinID, userEmails)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += "Reboot failed; skipped user notifications.\r\n";
+                }));
+            }
         }
 
         private string GetSccFile()
@@ -502,25 +519,34 @@ namespace Uploader
             if (string.IsNullOrEmpty(sender) || string.IsNullOrEmpty(admin) || PatternInfo == null)
                 return;
 
-            var emailRequest = new SendEmailRequest
-            {
-                Source = sender,
-                Destination = new Destination
-                {
-                    ToAddresses = new List<string> { admin }
-                },
-                Message = new Message
-                {
-                    Subject = new Content("Upload Successful"),
-                    Body = new Body
-                    {
-                        Text = new Content(
-                            $"The upload for album {_albumId} design {designId} ({PatternInfo.Title}) pinId {pinId} was successful.")
-                    }
-                }
-            };
+            string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
+            string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
+            string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
+                ? "New cross stitch pattern"
+                : PatternInfo.Title;
+            string unsubscribeUrl = BuildUnsubscribeUrl(admin);
+            var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
 
-            await _sesClient.SendEmailAsync(emailRequest).ConfigureAwait(false);
+            string htmlBody =
+                $"<p>The upload for album {_albumId} design {designId} was successful.</p>" +
+                $"<p><a href=\"{patternUrl}\">" +
+                $"<img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:500px; height:auto; border:0;\"/>" +
+                $"</a></p>" +
+                $"<p>Pin ID: {pinId}</p>" +
+                $"<p>If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+
+            string textBody =
+                $"The upload for album {_albumId} design {designId} ({PatternInfo.Title}) pinId {pinId} was successful."
+                + $"\r\nUnsubscribe: {unsubscribeUrl}";
+
+            await _emailHelper.SendEmailAsync(
+                _sesClient,
+                sender,
+                new[] { admin },
+                "Upload Successful",
+                textBody,
+                htmlBody,
+                unsubscribeHeaders).ConfigureAwait(false);
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -528,10 +554,184 @@ namespace Uploader
             }));
         }
 
+        private async Task<List<string>> FetchAllUserEmailsAsync()
+        {
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+            string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
+
+            var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                var scanRequest = new ScanRequest
+                {
+                    TableName = usersTable,
+                    ProjectionExpression = emailAttribute
+                };
+
+                Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+                do
+                {
+                    scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                    var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                    foreach (var item in response.Items)
+                    {
+                        if (!item.TryGetValue(emailAttribute, out var emailAttr))
+                            continue;
+
+                        if (!string.IsNullOrWhiteSpace(emailAttr.S))
+                        {
+                            emails.Add(emailAttr.S.Trim());
+                        }
+                        else if (emailAttr.L != null && emailAttr.L.Count > 0)
+                        {
+                            foreach (var entry in emailAttr.L)
+                            {
+                                if (!string.IsNullOrWhiteSpace(entry.S))
+                                    emails.Add(entry.S.Trim());
+                            }
+                        }
+                    }
+
+                    lastEvaluatedKey = response.LastEvaluatedKey;
+                } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Fetched {emails.Count} user emails.\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to fetch user emails: {ex.Message}\r\n";
+                }));
+            }
+
+            return emails.Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
+        }
+
+        private async Task SendNotificationMailToUsersAsync(
+            int designId,
+            string pinId,
+            List<string> userEmails)
+        {
+            string? sender = ConfigurationManager.AppSettings["SenderEmail"];
+            string? admin = ConfigurationManager.AppSettings["AdminEmail"];
+
+            if (PatternInfo == null || string.IsNullOrEmpty(sender) || userEmails.Count == 0)
+                return;
+
+            const int batchSize = 50; // SES supports up to 50 destinations per request.
+            string subject = $"New pattern uploaded: {PatternInfo.Title}";
+            string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
+            string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
+            string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
+                ? "New cross stitch pattern"
+                : PatternInfo.Title;
+            string bodyText =
+                $"A new cross stitch pattern \"{PatternInfo.Title}\" is now available.\r\n" +
+                $"Album: {_albumId}, DesignID: {designId}, PinID: {pinId}.\r\n" +
+                $"View and download: {patternUrl}";
+            string htmlBody =
+                $"<p>A new cross stitch pattern is available.</p>" +
+                $"<p><a href=\"{patternUrl}\"><img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:600px; height:auto; border:0;\"></a></p>" +
+                $"<p><a href=\"{patternUrl}\">Click here to view and download the pattern</a></p>" +
+                $"<p>Album: {_albumId}, DesignID: {designId}, PinID: {pinId}</p>";
+
+            // Send the same email to admin first.
+            if (!string.IsNullOrEmpty(admin))
+            {
+                string adminUnsubUrl = BuildUnsubscribeUrl(admin);
+                var adminHeaders = BuildUnsubscribeHeaders(adminUnsubUrl, sender);
+                string adminTextBody = bodyText + $"\r\nUnsubscribe: {adminUnsubUrl}";
+                string adminHtmlBody = htmlBody + $"<p>If you prefer not to receive these emails, <a href=\"{adminUnsubUrl}\">unsubscribe</a>.</p>";
+
+                await _emailHelper.SendEmailAsync(
+                    _sesClient,
+                    sender,
+                    new[] { admin },
+                    subject,
+                    adminTextBody,
+                    adminHtmlBody,
+                    adminHeaders).ConfigureAwait(false);
+            }
+
+            var recipients = userEmails;
+            if (!string.IsNullOrEmpty(admin))
+            {
+                recipients = userEmails
+                    .Where(e => !string.Equals(e, admin, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            foreach (var email in recipients)
+            {
+                string unsubscribeUrl = BuildUnsubscribeUrl(email);
+                var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
+                string userText = bodyText + $"\r\nUnsubscribe: {unsubscribeUrl}";
+                string userHtml = htmlBody + $"<p>If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+
+                await _emailHelper.SendEmailAsync(
+                    _sesClient,
+                    sender,
+                    new[] { email },
+                    subject,
+                    userText,
+                    userHtml,
+                    unsubscribeHeaders).ConfigureAwait(false);
+            }
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text += $"Sent notification email to {userEmails.Count} users.\r\n";
+            }));
+        }
+
         private string GetPhotoKey(int designId)
         {
             string fileName = Path.GetFileName(_imageFilePath);
             return $"{PhotoPrefix}/{_albumId}/{designId}/{fileName}";
+        }
+
+        private string BuildUnsubscribeUrl(string email)
+        {
+            string baseUrl = ConfigurationManager.AppSettings["UnsubscribeBaseUrl"] ??
+                             "https://www.cross-stitch-pattern.net/unsubscribe";
+            string secret = ConfigurationManager.AppSettings["UnsubscribeSecret"] ??
+                            "change-me-secret-for-unsubscribe-hmac";
+
+            string token = BuildUnsubscribeToken(email, secret);
+
+            return $"{baseUrl}?token={Uri.EscapeDataString(token)}";
+        }
+
+        private static string BuildUnsubscribeToken(string email, string secret)
+        {
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+            byte[] hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(email));
+            return ToBase64Url(hash);
+        }
+
+        private static string ToBase64Url(byte[] data)
+        {
+            return Convert.ToBase64String(data)
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
+        }
+
+        private static Dictionary<string, string> BuildUnsubscribeHeaders(string unsubscribeUrl, string sender)
+        {
+            string mailto = $"mailto:{sender}";
+            return new Dictionary<string, string>
+            {
+                { "List-Unsubscribe", $"<{mailto}>, <{unsubscribeUrl}>" },
+                { "List-Unsubscribe-Post", "List-Unsubscribe=One-Click" }
+            };
         }
 
         #endregion
