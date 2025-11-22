@@ -25,6 +25,7 @@ namespace UploadPatterns
         private int _width;
         private int _height;
         private int _designId = -1;
+        private string _pinId = string.Empty;
 
         /// <summary>
         /// Album ID (set externally after reading .txt file).
@@ -87,6 +88,17 @@ namespace UploadPatterns
             get => _designId;
             set => _designId = value;
         }
+
+
+        /// <summary>
+        /// ID of the pin uploaded to pinterest.
+        /// </summary>
+        public string PinID
+        {
+            get => _pinId;
+            set => _pinId = value;
+        }
+
 
         /// <summary>
         /// Reads PDF content as text (using a known export format) and parses title,

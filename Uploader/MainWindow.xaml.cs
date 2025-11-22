@@ -133,7 +133,7 @@ namespace Uploader
 
             try
             {
-                await RunFullUploadFlowAsync(PatternInfo);
+                await RunFullUploadFlowAsync();
 
                 // Continuation is on UI thread (no ConfigureAwait(false) here)
                 txtStatus.Text += "[Upload] Done.\r\n";
@@ -154,7 +154,7 @@ namespace Uploader
             {
                 // Hard-coded test path – adjust if needed
                 var info = new PatternInfo(@"D:\Stitch Craft\Charts\ReadyCharts\2025_11_02\1.pdf");
-                string pinId = await _pinterestHelper.UploadPinForPatternAsync(info);
+                string pinId = await _pinterestHelper.UploadPinForPatternAsync(info, true);
 
                 txtStatus.Text += $"[Test Pinterest] Pin created: {pinId}\r\n";
             }
@@ -287,7 +287,7 @@ namespace Uploader
         /// Full upload flow: S3, DynamoDB, Pinterest, SES, EC2 reboot.
         /// This method does not touch UI directly.
         /// </summary>
-        private async Task RunFullUploadFlowAsync(PatternInfo patternInfo)
+        private async Task RunFullUploadFlowAsync()
         {
             // 1. Calculate global page and next design ID
             int maxGlobalPage = await GetMaxGlobalPageAsync();
@@ -296,24 +296,21 @@ namespace Uploader
             string sccFile = GetSccFile();
 
             // Recalculate DesignID to avoid conflicts
-            patternInfo.DesignID = await GetNextDesignIdAsync().ConfigureAwait(false);
+            PatternInfo.DesignID = await GetNextDesignIdAsync().ConfigureAwait(false);
 
             // 2. Upload files to S3
-            await UploadChartToS3Async(patternInfo.DesignID, sccFile).ConfigureAwait(false);
-            await UploadPdfToS3Async(patternInfo.DesignID).ConfigureAwait(false);
-            await UploadImageToS3Async(patternInfo.DesignID).ConfigureAwait(false);
+            await UploadChartToS3Async(PatternInfo.DesignID, sccFile).ConfigureAwait(false);
+            await UploadPdfToS3Async(PatternInfo.DesignID).ConfigureAwait(false);
+            await UploadImageToS3Async(PatternInfo.DesignID).ConfigureAwait(false);
 
-            // 3. Insert item into DynamoDB
-            await InsertItemIntoDynamoDbAsync(
-                patternInfo.NPage,
-                patternInfo.DesignID,
-                nGlobalPage).ConfigureAwait(false);
+            // 3. Create Pinterest pin
+            PatternInfo.PinID = await _pinterestHelper.UploadPinForPatternAsync(PatternInfo).ConfigureAwait(false);
 
-            // 4. Create Pinterest pin
-            string pinId = await _pinterestHelper.UploadPinForPatternAsync(patternInfo).ConfigureAwait(false);
+            // 4. Insert item into DynamoDB
+            await InsertItemIntoDynamoDbAsync(nGlobalPage).ConfigureAwait(false);
 
             // 5. Notify admin via email
-            await SendNotificationMailToAdminAsync(patternInfo.DesignID, pinId).ConfigureAwait(false);
+            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID).ConfigureAwait(false);
 
             // 6. Reboot EC2 environment (status text is updated via callback which marshals to UI)
             await _ec2Helper.RebootInstancesRequest(msg =>
@@ -465,7 +462,7 @@ namespace Uploader
             await _s3TransferUtility.UploadAsync(request).ConfigureAwait(false);
         }
 
-        private async Task InsertItemIntoDynamoDbAsync(string nPage, int designId, int nGlobalPage)
+        private async Task InsertItemIntoDynamoDbAsync(int nGlobalPage)
         {
             if (PatternInfo == null)
                 throw new InvalidOperationException("PatternInfo is not initialized.");
@@ -473,18 +470,19 @@ namespace Uploader
             var item = new Dictionary<string, AttributeValue>
             {
                 { "ID",          new AttributeValue { S = AlbumPartitionKey } },
-                { "NPage",       new AttributeValue { S = nPage } },
+                { "NPage",       new AttributeValue { S = PatternInfo.NPage } },
                 { "AlbumID",     new AttributeValue { N = _albumId.ToString() } },
                 { "Caption",     new AttributeValue { S = PatternInfo.Title } },
                 { "Description", new AttributeValue { S = PatternInfo.Description } },
-                { "DesignID",    new AttributeValue { N = designId.ToString() } },
+                { "DesignID",    new AttributeValue { N = PatternInfo.DesignID.ToString() } },
                 { "EntityType",  new AttributeValue { S = "DESIGN" } },
                 { "Height",      new AttributeValue { N = PatternInfo.Height.ToString() } },
                 { "NColors",     new AttributeValue { N = PatternInfo.NColors.ToString() } },
                 { "NDownloaded", new AttributeValue { N = "0" } },
                 { "NGlobalPage", new AttributeValue { N = nGlobalPage.ToString() } },
                 { "Notes",       new AttributeValue { S = PatternInfo.Notes } },
-                { "Width",       new AttributeValue { N = PatternInfo.Width.ToString() } }
+                { "Width",       new AttributeValue { N = PatternInfo.Width.ToString() } },
+                { "PinID",       new AttributeValue { N = PatternInfo.PinID } }
             };
 
             var request = new PutItemRequest

@@ -86,17 +86,22 @@ namespace Uploader.Helpers
         /// <param name="pattern">Cross-stitch pattern metadata.</param>
         /// <param name="albumId">Numeric AlbumID of this design.</param>
         /// <returns>Created Pin ID.</returns>
-        public async Task<string> UploadPinForPatternAsync(PatternInfo pattern)
+        public async Task<string> UploadPinForPatternAsync(PatternInfo pattern, bool test = false)
         {
             if (pattern == null) throw new ArgumentNullException(nameof(pattern));
-            pattern.DesignID = 5375;
-            pattern.AlbumId = 18;
-            pattern.NPage = "00167";
+            if (test)
+            {
+                pattern.DesignID = 5375;
+                pattern.AlbumId = 18;
+                pattern.NPage = "00167";
+            }
             if (pattern.DesignID <= 0)
                 throw new ArgumentException("DesignID must be set before uploading a pin.", nameof(pattern));
 
             // 1. Resolve boardId via CSV or default
-            string boardId = await GetBoardIdForAlbumAsync(pattern.AlbumId).ConfigureAwait(false);
+            string boardId = test ? "257127528664615140" // Test board ID
+                :
+                await GetBoardIdForAlbumAsync(pattern.AlbumId).ConfigureAwait(false);
 
             // 2. Build URLs
             string patternUrl = BuildPatternUrl(pattern);
@@ -436,7 +441,7 @@ namespace Uploader.Helpers
         {
             // Something like:
             //   "Cute Cats – Cat Cross Stitch Pattern, Printable PDF"
-            string titleBase = pattern.Title?.Trim();
+            string? titleBase = pattern.Title?.Trim();
             if (string.IsNullOrEmpty(titleBase))
             {
                 titleBase = "Cross stitch pattern";
