@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -222,21 +223,39 @@ namespace Uploader
             }
         }
 
+        private async void InitializeUserUnsubscribe_Click(object sender, RoutedEventArgs e)
+        {
+
+            txtStatus.Text = "Initializing user unsubscribe fields...\r\n";
+            try
+            {
+                await InitializeUserUnsubscribeFieldsAsync();
+                // Back on UI thread
+                txtStatus.Text += "Finished initializing user unsubscribe fields.\r\n";
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text += $"Error: {ex.Message}\r\n";
+                MessageBox.Show(ex.ToString(), "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+            
         #endregion
 
-        #region Pattern info and album helpers (no UI access inside)
+            #region Pattern info and album helpers (no UI access inside)
 
-        /// <summary>
-        /// Creates PatternInfo from 1.pdf in the batch folder and enriches it
-        /// with AlbumId, NPage and DesignID from DynamoDB.
-        /// </summary>
+            /// <summary>
+            /// Creates PatternInfo from 1.pdf in the batch folder and enriches it
+            /// with AlbumId, NPage and DesignID from DynamoDB.
+            /// </summary>
         private async Task<PatternInfo> CreatePatternInfoAsync()
         {
             string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
             var patternInfo = new PatternInfo(pdfPath);
 
             patternInfo.AlbumId = LoadAlbumIdFromTxt();
-            patternInfo.NPage = await GetNextNPageAsync();   
+            patternInfo.NPage = await GetNextNPageAsync();
             patternInfo.DesignID = await GetNextDesignIdAsync();
 
             return patternInfo;
@@ -312,8 +331,12 @@ namespace Uploader
             // 4. Insert item into DynamoDB
             await InsertItemIntoDynamoDbAsync(nGlobalPage).ConfigureAwait(false);
 
+            // Precompute a few random album suggestions to reuse across emails.
+            var albumSuggestions = await FetchAlbumSuggestionsAsync(4).ConfigureAwait(false);
+
             // 5. Notify admin via email
-            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID).ConfigureAwait(false);
+            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID, albumSuggestions)
+                .ConfigureAwait(false);
 
             // 6. Reboot EC2 environment (status text is updated via callback which marshals to UI)
             bool rebooted = await _ec2Helper.RebootInstancesRequest(msg =>
@@ -323,8 +346,12 @@ namespace Uploader
 
             if (rebooted)
             {
-                var userEmails = await FetchAllUserEmailsAsync().ConfigureAwait(false);
-                await SendNotificationMailToUsersAsync(PatternInfo.DesignID, PatternInfo.PinID, userEmails)
+                var userRecipients = await FetchAllUserEmailsAsync().ConfigureAwait(false);
+                await SendNotificationMailToUsersAsync(
+                        PatternInfo.DesignID,
+                        PatternInfo.PinID,
+                        userRecipients,
+                        albumSuggestions)
                     .ConfigureAwait(false);
             }
             else
@@ -511,7 +538,143 @@ namespace Uploader
             await _dynamoDbClient.PutItemAsync(request).ConfigureAwait(false);
         }
 
-        private async Task SendNotificationMailToAdminAsync(int designId, string pinId)
+        private async Task<List<AlbumInfo>> FetchAlbumSuggestionsAsync(int takeCount)
+        {
+            var albums = new List<AlbumInfo>();
+            string tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
+
+            try
+            {
+                var scanRequest = new ScanRequest
+                {
+                    TableName = tableName,
+                    FilterExpression = "EntityType = :albumType",
+                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        { ":albumType", new AttributeValue { S = "ALBUM" } }
+                    },
+                    ProjectionExpression = "ID, Caption, EntityType"
+                };
+
+                Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+                do
+                {
+                    scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                    var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+                    lastEvaluatedKey = response.LastEvaluatedKey;
+
+                    foreach (var item in response.Items)
+                    {
+                        if (!item.TryGetValue("ID", out var idAttr) || string.IsNullOrEmpty(idAttr.S))
+                            continue;
+
+                        string id = idAttr.S;
+                        if (!id.StartsWith("ALB#", StringComparison.OrdinalIgnoreCase) || id.Length <= 4)
+                            continue;
+
+                        string albumId = id.Substring(4);
+                        string caption = item.TryGetValue("Caption", out var captionAttr)
+                            ? captionAttr.S ?? string.Empty
+                            : string.Empty;
+
+                        albums.Add(new AlbumInfo
+                        {
+                            AlbumId = albumId,
+                            Caption = caption
+                        });
+                    }
+                } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to fetch albums: {ex.Message}\r\n";
+                }));
+                return new List<AlbumInfo>();
+            }
+
+            string currentAlbum = _albumId.ToString("D4");
+            var pool = albums
+                .Where(a => !string.Equals(a.AlbumId, currentAlbum, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (pool.Count == 0)
+                pool = albums;
+
+            return TakeRandomAlbums(pool, takeCount);
+        }
+
+        private static List<AlbumInfo> TakeRandomAlbums(List<AlbumInfo> source, int takeCount)
+        {
+            if (source.Count == 0 || takeCount <= 0)
+                return new List<AlbumInfo>();
+
+            if (source.Count <= takeCount)
+                return source.Take(takeCount).ToList();
+
+            var rng = new Random();
+            for (int i = source.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (source[i], source[j]) = (source[j], source[i]);
+            }
+
+            return source.Take(takeCount).ToList();
+        }
+
+        private string BuildAlbumSuggestionsHtml(IReadOnlyList<AlbumInfo> albums)
+        {
+            if (albums == null || albums.Count == 0)
+                return string.Empty;
+
+            var sb = new StringBuilder();
+            sb.Append("<p>Explore more albums:</p><ul>");
+            int index = 1;
+
+            foreach (var album in albums)
+            {
+                string caption = string.IsNullOrWhiteSpace(album.Caption)
+                    ? $"Featured album {index}"
+                    : album.Caption;
+                string url = _linkHelper.BuildAlbumUrl(album.AlbumId, album.Caption);
+
+                sb.Append($"<li><a href=\"{WebUtility.HtmlEncode(url)}\">{WebUtility.HtmlEncode(caption)}</a></li>");
+                index++;
+            }
+
+            sb.Append("</ul>");
+            return sb.ToString();
+        }
+
+        private string BuildAlbumSuggestionsText(IReadOnlyList<AlbumInfo> albums)
+        {
+            if (albums == null || albums.Count == 0)
+                return string.Empty;
+
+            var sb = new StringBuilder();
+            sb.AppendLine();
+            sb.AppendLine("Explore more albums:");
+            int index = 1;
+
+            foreach (var album in albums)
+            {
+                string caption = string.IsNullOrWhiteSpace(album.Caption)
+                    ? $"Featured album {index}"
+                    : album.Caption;
+                string url = _linkHelper.BuildAlbumUrl(album.AlbumId, album.Caption);
+
+                sb.AppendLine($"- {caption}: {url}");
+                index++;
+            }
+
+            return sb.ToString();
+        }
+
+        private async Task SendNotificationMailToAdminAsync(
+            int designId,
+            string pinId,
+            IReadOnlyList<AlbumInfo> albumSuggestions)
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
@@ -526,17 +689,21 @@ namespace Uploader
                 : PatternInfo.Title;
             string unsubscribeUrl = BuildUnsubscribeUrl(admin);
             var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
+            string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
+            string albumText = BuildAlbumSuggestionsText(albumSuggestions);
 
             string htmlBody =
                 $"<p>The upload for album {_albumId} design {designId} was successful.</p>" +
                 $"<p><a href=\"{patternUrl}\">" +
-                $"<img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:500px; height:auto; border:0;\"/>" +
+                $"<img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"/>" +
                 $"</a></p>" +
                 $"<p>Pin ID: {pinId}</p>" +
-                $"<p>If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+                albumHtml +
+                $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
             string textBody =
                 $"The upload for album {_albumId} design {designId} ({PatternInfo.Title}) pinId {pinId} was successful."
+                + albumText
                 + $"\r\nUnsubscribe: {unsubscribeUrl}";
 
             await _emailHelper.SendEmailAsync(
@@ -554,19 +721,147 @@ namespace Uploader
             }));
         }
 
-        private async Task<List<string>> FetchAllUserEmailsAsync()
+        /// <summary>
+        /// One-time (or repeatable) migration helper:
+        /// for every user in the CrossStitchUsers table, ensures two attributes exist:
+        /// - UnsubscribeToken (string, securely generated if missing)
+        /// - Unsubscribed   (bool, false by default if missing)
+        ///
+        /// Existing values are preserved; only missing attributes are added.
+        /// </summary>
+        private async Task InitializeUserUnsubscribeFieldsAsync()
+        {
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+
+            int updatedCount = 0;
+            int skippedCount = 0;
+
+            try
+            {
+                var scanRequest = new ScanRequest
+                {
+                    TableName = usersTable
+                    // No ProjectionExpression: we read full items to keep things simple
+                };
+
+                Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+                do
+                {
+                    scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                    var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                    foreach (var item in response.Items)
+                    {
+                        if (!item.TryGetValue("ID", out var idAttr))
+                        {
+                            // Without PK we cannot update this record safely.
+                            continue;
+                        }
+
+                        bool hasToken =
+                            item.TryGetValue("UnsubscribeToken", out var tokenAttr) &&
+                            !string.IsNullOrWhiteSpace(tokenAttr.S);
+
+                        bool hasUnsubscribed = item.ContainsKey("Unsubscribed");
+
+                        if (hasToken && hasUnsubscribed)
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
+                        var key = new Dictionary<string, AttributeValue>
+                        {
+                            { "ID", idAttr }
+                        };
+
+                        var exprValues = new Dictionary<string, AttributeValue>();
+                        var setClauses = new List<string>();
+
+                        if (!hasToken)
+                        {
+                            exprValues[":token"] = new AttributeValue
+                            {
+                                S = GenerateRandomToken()
+                            };
+                            setClauses.Add("UnsubscribeToken = :token");
+                        }
+
+                        if (!hasUnsubscribed)
+                        {
+                            exprValues[":falseVal"] = new AttributeValue
+                            {
+                                BOOL = false
+                            };
+                            setClauses.Add("Unsubscribed = :falseVal");
+                        }
+
+                        if (setClauses.Count == 0)
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
+                        string updateExpression = "SET " + string.Join(", ", setClauses);
+
+                        var updateRequest = new UpdateItemRequest
+                        {
+                            TableName = usersTable,
+                            Key = key,
+                            UpdateExpression = updateExpression,
+                            ExpressionAttributeValues = exprValues
+                        };
+
+                        await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
+                        updatedCount++;
+                    }
+
+                    lastEvaluatedKey = response.LastEvaluatedKey;
+                } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text +=
+                        $"InitializeUserUnsubscribeFieldsAsync finished. Updated {updatedCount} user(s), skipped {skippedCount} user(s).\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to initialize unsubscribe fields for users: {ex.Message}\r\n";
+                }));
+            }
+        }
+
+        private sealed class UserRecipient
+        {
+            public UserRecipient(string email, string? firstName)
+            {
+                Email = email;
+                FirstName = firstName;
+            }
+
+            public string Email { get; }
+            public string? FirstName { get; }
+        }
+
+        private async Task<List<UserRecipient>> FetchAllUserEmailsAsync()
         {
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
+            string firstNameAttribute = ConfigurationManager.AppSettings["UserFirstNameAttribute"] ?? "FirstName";
 
             var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var recipients = new List<UserRecipient>();
 
             try
             {
                 var scanRequest = new ScanRequest
                 {
                     TableName = usersTable,
-                    ProjectionExpression = emailAttribute
+                    ProjectionExpression = $"{emailAttribute}, {firstNameAttribute}"
                 };
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
@@ -581,18 +876,45 @@ namespace Uploader
                         if (!item.TryGetValue(emailAttribute, out var emailAttr))
                             continue;
 
+                        string? email = null;
                         if (!string.IsNullOrWhiteSpace(emailAttr.S))
                         {
-                            emails.Add(emailAttr.S.Trim());
+                            email = emailAttr.S.Trim();
                         }
                         else if (emailAttr.L != null && emailAttr.L.Count > 0)
                         {
                             foreach (var entry in emailAttr.L)
                             {
                                 if (!string.IsNullOrWhiteSpace(entry.S))
-                                    emails.Add(entry.S.Trim());
+                                {
+                                    email = entry.S.Trim();
+                                }
                             }
                         }
+
+                        if (string.IsNullOrWhiteSpace(email))
+                            continue;
+
+                        if (!emails.Add(email))
+                            continue;
+
+                        string? firstName = null;
+                        if (item.TryGetValue(firstNameAttribute, out var firstNameAttr))
+                        {
+                            if (!string.IsNullOrWhiteSpace(firstNameAttr.S))
+                            {
+                                firstName = firstNameAttr.S.Trim();
+                            }
+                            else if (firstNameAttr.L != null && firstNameAttr.L.Count > 0)
+                            {
+                                firstName = firstNameAttr.L
+                                    .Select(entry => entry.S)
+                                    .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))
+                                    ?.Trim();
+                            }
+                        }
+
+                        recipients.Add(new UserRecipient(email, firstName));
                     }
 
                     lastEvaluatedKey = response.LastEvaluatedKey;
@@ -600,7 +922,7 @@ namespace Uploader
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    txtStatus.Text += $"Fetched {emails.Count} user emails.\r\n";
+                    txtStatus.Text += $"Fetched {recipients.Count} user emails.\r\n";
                 }));
             }
             catch (Exception ex)
@@ -611,44 +933,54 @@ namespace Uploader
                 }));
             }
 
-            return emails.Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
+            return recipients;
         }
 
         private async Task SendNotificationMailToUsersAsync(
             int designId,
             string pinId,
-            List<string> userEmails)
+            List<UserRecipient> userRecipients,
+            IReadOnlyList<AlbumInfo> albumSuggestions)
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
 
-            if (PatternInfo == null || string.IsNullOrEmpty(sender) || userEmails.Count == 0)
+            if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
 
             const int batchSize = 50; // SES supports up to 50 destinations per request.
             string subject = $"New pattern uploaded: {PatternInfo.Title}";
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
+            string siteUrl = patternUrl;
+            if (Uri.TryCreate(patternUrl, UriKind.Absolute, out var patternUri))
+                siteUrl = patternUri.GetLeftPart(UriPartial.Authority);
             string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
                 ? "New cross stitch pattern"
                 : PatternInfo.Title;
-            string bodyText =
-                $"A new cross stitch pattern \"{PatternInfo.Title}\" is now available.\r\n" +
-                $"Album: {_albumId}, DesignID: {designId}, PinID: {pinId}.\r\n" +
-                $"View and download: {patternUrl}";
-            string htmlBody =
-                $"<p>A new cross stitch pattern is available.</p>" +
-                $"<p><a href=\"{patternUrl}\"><img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:600px; height:auto; border:0;\"></a></p>" +
+            string safeTitleHtml = WebUtility.HtmlEncode(PatternInfo.Title ?? "cross stitch pattern");
+            string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
+            string albumText = BuildAlbumSuggestionsText(albumSuggestions);
+            string baseTextBody =
+                $"Just wanted to let you know that I uploaded a new cross stitch pattern \"{PatternInfo.Title}\".\r\n" +
+                $"View and download: {patternUrl}\r\n" +
+                $"Visit {siteUrl} to explore more patterns and see what I'm uploading next.\r\n" +
+                $"Join me on Facebook: https://www.facebook.com/AnnCrossStitch/ — I'd love to connect.";
+            string baseHtmlBody =
+                $"<p>Just wanted to let you know that I uploaded a new cross stitch pattern \"{safeTitleHtml}\".</p>" +
+                $"<p><a href=\"{patternUrl}\"><img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
                 $"<p><a href=\"{patternUrl}\">Click here to view and download the pattern</a></p>" +
-                $"<p>Album: {_albumId}, DesignID: {designId}, PinID: {pinId}</p>";
+                $"<p>Visit <a href=\"{siteUrl}\">{siteUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
+                $"<p>Join me on Facebook: <a href=\"https://www.facebook.com/AnnCrossStitch/\">Ann Cross Stitch</a>. I'd love to connect.</p>" +
+                albumHtml;
 
             // Send the same email to admin first.
             if (!string.IsNullOrEmpty(admin))
             {
                 string adminUnsubUrl = BuildUnsubscribeUrl(admin);
                 var adminHeaders = BuildUnsubscribeHeaders(adminUnsubUrl, sender);
-                string adminTextBody = bodyText + $"\r\nUnsubscribe: {adminUnsubUrl}";
-                string adminHtmlBody = htmlBody + $"<p>If you prefer not to receive these emails, <a href=\"{adminUnsubUrl}\">unsubscribe</a>.</p>";
+                string adminTextBody = baseTextBody + albumText + $"\r\nUnsubscribe: {adminUnsubUrl}";
+                string adminHtmlBody = baseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{adminUnsubUrl}\">unsubscribe</a>.</p>";
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -660,25 +992,37 @@ namespace Uploader
                     adminHeaders).ConfigureAwait(false);
             }
 
-            var recipients = userEmails;
+            var recipients = userRecipients;
             if (!string.IsNullOrEmpty(admin))
             {
-                recipients = userEmails
-                    .Where(e => !string.Equals(e, admin, StringComparison.OrdinalIgnoreCase))
+                recipients = userRecipients
+                    .Where(r => !string.Equals(r.Email, admin, StringComparison.OrdinalIgnoreCase))
                     .ToList();
             }
 
-            foreach (var email in recipients)
+            string BuildGreetingText(string? firstName) =>
+                !string.IsNullOrWhiteSpace(firstName)
+                    ? $"Dear {firstName},\r\n"
+                    : "Hello,\r\n";
+
+            string BuildGreetingHtml(string? firstName) =>
+                !string.IsNullOrWhiteSpace(firstName)
+                    ? $"<p>Dear {WebUtility.HtmlEncode(firstName)},</p>"
+                    : "<p>Hello,</p>";
+
+            foreach (var recipient in recipients)
             {
-                string unsubscribeUrl = BuildUnsubscribeUrl(email);
+                string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-                string userText = bodyText + $"\r\nUnsubscribe: {unsubscribeUrl}";
-                string userHtml = htmlBody + $"<p>If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+                string greetingText = BuildGreetingText(recipient.FirstName);
+                string greetingHtml = BuildGreetingHtml(recipient.FirstName);
+                string userText = greetingText + baseTextBody + albumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
+                string userHtml = greetingHtml + baseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
                     sender,
-                    new[] { email },
+                    new[] { recipient.Email },
                     subject,
                     userText,
                     userHtml,
@@ -714,6 +1058,21 @@ namespace Uploader
             using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
             byte[] hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(email));
             return ToBase64Url(hash);
+        }
+
+        /// <summary>
+        /// Generates a cryptographically secure random token
+        /// encoded as URL-safe base64 (same style as ToBase64Url).
+        /// </summary>
+        private static string GenerateRandomToken(int size = 32)
+        {
+            var data = new byte[size];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(data);
+            }
+
+            return ToBase64Url(data);
         }
 
         private static string ToBase64Url(byte[] data)

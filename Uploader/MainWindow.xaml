@@ -137,8 +137,13 @@
                         Width="190"
                         Height="26"
                         Margin="10"
-                        Click="BtnRenameBoards_Click" /> 
+                        Click="BtnRenameBoards_Click" />
 
+                <Button Content="Initialize User Unsubscribe"
+                        Width="190"
+                        Height="26"
+                        Margin="10"
+                        Click="InitializeUserUnsubscribe_Click" />
             </StackPanel>
 
             <TextBlock x:Name="txtStatus"
