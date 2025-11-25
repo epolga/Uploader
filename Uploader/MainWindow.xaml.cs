@@ -255,6 +255,10 @@ namespace Uploader
             var patternInfo = new PatternInfo(pdfPath);
 
             patternInfo.AlbumId = LoadAlbumIdFromTxt();
+            if(patternInfo.AlbumId == 0)
+            {
+                throw new Exception("Failed to load AlbumID from .txt file.");
+            }
             patternInfo.NPage = await GetNextNPageAsync();
             patternInfo.DesignID = await GetNextDesignIdAsync();
 
@@ -949,7 +953,7 @@ namespace Uploader
                 return;
 
             const int batchSize = 50; // SES supports up to 50 destinations per request.
-            string subject = $"New pattern uploaded: {PatternInfo.Title}";
+            string subject = $"❌🪡❌🪡❌ Hi, It's Ann. New free pattern uploaded: {PatternInfo.Title} ";
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
@@ -1031,7 +1035,7 @@ namespace Uploader
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                txtStatus.Text += $"Sent notification email to {userEmails.Count} users.\r\n";
+                txtStatus.Text += $"Sent notification email to {recipients.Count} users.\r\n";
             }));
         }
 
