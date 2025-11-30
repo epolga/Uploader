@@ -530,7 +530,7 @@ namespace Uploader
                 { "NGlobalPage", new AttributeValue { N = nGlobalPage.ToString() } },
                 { "Notes",       new AttributeValue { S = PatternInfo.Notes } },
                 { "Width",       new AttributeValue { N = PatternInfo.Width.ToString() } },
-                { "PinID",       new AttributeValue { N = PatternInfo.PinID } }
+                { "PinID",       new AttributeValue { S = PatternInfo.PinID ?? string.Empty } }
             };
 
             var request = new PutItemRequest
@@ -841,14 +841,16 @@ namespace Uploader
 
         private sealed class UserRecipient
         {
-            public UserRecipient(string email, string? firstName)
+            public UserRecipient(string email, string? firstName, AttributeValue? idAttribute = null)
             {
                 Email = email;
                 FirstName = firstName;
+                IdAttribute = idAttribute;
             }
 
             public string Email { get; }
             public string? FirstName { get; }
+            public AttributeValue? IdAttribute { get; }
         }
 
         private async Task<List<UserRecipient>> FetchAllUserEmailsAsync()
@@ -856,6 +858,7 @@ namespace Uploader
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string firstNameAttribute = ConfigurationManager.AppSettings["UserFirstNameAttribute"] ?? "FirstName";
+            string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
 
             var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var recipients = new List<UserRecipient>();
@@ -865,7 +868,7 @@ namespace Uploader
                 var scanRequest = new ScanRequest
                 {
                     TableName = usersTable,
-                    ProjectionExpression = $"{emailAttribute}, {firstNameAttribute}"
+                    ProjectionExpression = $"{emailAttribute}, {firstNameAttribute}, {userIdAttribute}"
                 };
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
@@ -918,7 +921,13 @@ namespace Uploader
                             }
                         }
 
-                        recipients.Add(new UserRecipient(email, firstName));
+                        AttributeValue? idAttr = null;
+                        if (item.TryGetValue(userIdAttribute, out var idValue))
+                        {
+                            idAttr = idValue;
+                        }
+
+                        recipients.Add(new UserRecipient(email, firstName, idAttr));
                     }
 
                     lastEvaluatedKey = response.LastEvaluatedKey;
@@ -948,12 +957,15 @@ namespace Uploader
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+            string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
+            string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
 
             if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
 
             const int batchSize = 50; // SES supports up to 50 destinations per request.
-            string subject = $"❌🪡❌🪡❌ Hi, It's Ann. New free pattern uploaded: {PatternInfo.Title} ";
+            string subject = "❌🪡❌🪡❌ New free kitten pattern just uploaded 🐱💛";
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
@@ -966,12 +978,16 @@ namespace Uploader
             string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
             string albumText = BuildAlbumSuggestionsText(albumSuggestions);
             string baseTextBody =
-                $"Just wanted to let you know that I uploaded a new cross stitch pattern \"{PatternInfo.Title}\".\r\n" +
+                "I wanted to let you know personally that I’ve just uploaded a new kitten cross-stitch pattern on my site.\r\n" +
+                "It’s sweet, gentle, and I think you’ll really enjoy stitching it.\r\n\r\n" +
+                "If you decide to stitch it, I would absolutely love to see your progress or finished result.\r\n\r\n" +
                 $"View and download: {patternUrl}\r\n" +
                 $"Visit {siteUrl} to explore more patterns and see what I'm uploading next.\r\n" +
                 $"Join me on Facebook: https://www.facebook.com/AnnCrossStitch/ — I'd love to connect.";
             string baseHtmlBody =
-                $"<p>Just wanted to let you know that I uploaded a new cross stitch pattern \"{safeTitleHtml}\".</p>" +
+                "<p>I wanted to let you know personally that I’ve just uploaded a new kitten cross-stitch pattern on my site.</p>" +
+                "<p>It’s sweet, gentle, and I think you’ll really enjoy stitching it.</p>" +
+                "<p>If you decide to stitch it, I would absolutely love to see your progress or finished result.</p>" +
                 $"<p><a href=\"{patternUrl}\"><img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
                 $"<p><a href=\"{patternUrl}\">Click here to view and download the pattern</a></p>" +
                 $"<p>Visit <a href=\"{siteUrl}\">{siteUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
@@ -1031,12 +1047,56 @@ namespace Uploader
                     userText,
                     userHtml,
                     unsubscribeHeaders).ConfigureAwait(false);
+
+                try
+                {
+                    await UpdateLastEmailDateAsync(recipient, usersTable, emailAttribute, userIdAttribute)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        txtStatus.Text += $"Failed to update LastEmailDate for {recipient.Email}: {ex.Message}\r\n";
+                    }));
+                }
             }
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 txtStatus.Text += $"Sent notification email to {recipients.Count} users.\r\n";
             }));
+        }
+
+        private async Task UpdateLastEmailDateAsync(
+            UserRecipient recipient,
+            string usersTable,
+            string emailAttribute,
+            string userIdAttribute)
+        {
+            var key = new Dictionary<string, AttributeValue>();
+
+            if (recipient.IdAttribute != null)
+            {
+                key[userIdAttribute] = recipient.IdAttribute;
+            }
+            else
+            {
+                key[emailAttribute] = new AttributeValue { S = recipient.Email };
+            }
+
+            var updateRequest = new UpdateItemRequest
+            {
+                TableName = usersTable,
+                Key = key,
+                UpdateExpression = "SET LastEmailDate = :now",
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                {
+                    [":now"] = new AttributeValue { S = DateTime.UtcNow.ToString("o") }
+                }
+            };
+
+            await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
         }
 
         private string GetPhotoKey(int designId)
