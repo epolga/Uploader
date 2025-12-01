@@ -965,7 +965,7 @@ namespace Uploader
                 return;
 
             const int batchSize = 50; // SES supports up to 50 destinations per request.
-            string subject = "❌🪡❌🪡❌ New free kitten pattern just uploaded 🐱💛";
+            string subject = "❌🪡❌🪡❌ I’ve just uploaded a Christmas bookmark 🐱💛";
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
@@ -978,16 +978,23 @@ namespace Uploader
             string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
             string albumText = BuildAlbumSuggestionsText(albumSuggestions);
             string baseTextBody =
-                "I wanted to let you know personally that I’ve just uploaded a new kitten cross-stitch pattern on my site.\r\n" +
-                "It’s sweet, gentle, and I think you’ll really enjoy stitching it.\r\n\r\n" +
-                "If you decide to stitch it, I would absolutely love to see your progress or finished result.\r\n\r\n" +
+                "I wanted to write you — I’ve just uploaded a new Christmas cross-stitch bookmark on my site.\r\n" +
+                "It turned out really sweet and festive, and I hope it brings you a little holiday joy.\r\n\r\n" +
+                "I’m also planning my next pattern, and it will be something special:\r\n" +
+                "a black kitty with dark gray stripes.\r\n" +
+                "I think it will be adorable, and I hope you’ll like it too.\r\n\r\n" +
+                "If you enjoy the bookmark or have any wishes for the kitten design, I’d really love to hear from you.\r\n\r\n" +
+                "Warmest regards,\r\n" +
+                "Ann\r\n\r\n" +
                 $"View and download: {patternUrl}\r\n" +
                 $"Visit {siteUrl} to explore more patterns and see what I'm uploading next.\r\n" +
                 $"Join me on Facebook: https://www.facebook.com/AnnCrossStitch/ — I'd love to connect.";
             string baseHtmlBody =
-                "<p>I wanted to let you know personally that I’ve just uploaded a new kitten cross-stitch pattern on my site.</p>" +
-                "<p>It’s sweet, gentle, and I think you’ll really enjoy stitching it.</p>" +
-                "<p>If you decide to stitch it, I would absolutely love to see your progress or finished result.</p>" +
+                "<p>I wanted to write you — I’ve just uploaded a new Christmas cross-stitch bookmark on my site.</p>" +
+                "<p>It turned out really sweet and festive, and I hope it brings you a little holiday joy.</p>" +
+                "<p>I’m also planning my next pattern, and it will be something special:<br/>a black kitty with dark gray stripes.<br/>I think it will be adorable, and I hope you’ll like it too.</p>" +
+                "<p>If you enjoy the bookmark or have any wishes for the kitten design, I’d really love to hear from you.</p>" +
+                "<p>Warmest regards,<br/>Ann</p>" +
                 $"<p><a href=\"{patternUrl}\"><img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
                 $"<p><a href=\"{patternUrl}\">Click here to view and download the pattern</a></p>" +
                 $"<p>Visit <a href=\"{siteUrl}\">{siteUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
