@@ -240,6 +240,24 @@ namespace Uploader
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        private async void InitializeUserCid_Click(object sender, RoutedEventArgs e)
+        {
+
+            txtStatus.Text = "Initializing user cid fields...\r\n";
+            try
+            {
+                await InitializeUserCidFieldsAsync();
+                // Back on UI thread
+                txtStatus.Text += "Finished initializing user cid fields.\r\n";
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text += $"Error: {ex.Message}\r\n";
+                MessageBox.Show(ex.ToString(), "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
             
         #endregion
 
@@ -835,6 +853,84 @@ namespace Uploader
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     txtStatus.Text += $"Failed to initialize unsubscribe fields for users: {ex.Message}\r\n";
+                }));
+            }
+        }
+
+        /// <summary>
+        /// Adds a per-user correlation id ("cid") if missing, using a random GUID.
+        /// Existing cid values are preserved.
+        /// </summary>
+        private async Task InitializeUserCidFieldsAsync()
+        {
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+
+            int updatedCount = 0;
+            int skippedCount = 0;
+
+            try
+            {
+                var scanRequest = new ScanRequest
+                {
+                    TableName = usersTable
+                };
+
+                Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+                do
+                {
+                    scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                    var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                    foreach (var item in response.Items)
+                    {
+                        if (!item.TryGetValue("ID", out var idAttr))
+                        {
+                            continue;
+                        }
+
+                        bool hasCid =
+                            item.TryGetValue("cid", out var cidAttr) &&
+                            !string.IsNullOrWhiteSpace(cidAttr.S);
+
+                        if (hasCid)
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
+                        var updateRequest = new UpdateItemRequest
+                        {
+                            TableName = usersTable,
+                            Key = new Dictionary<string, AttributeValue>
+                            {
+                                { "ID", idAttr }
+                            },
+                            UpdateExpression = "SET cid = :cid",
+                            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                            {
+                                { ":cid", new AttributeValue { S = Guid.NewGuid().ToString("N") } }
+                            }
+                        };
+
+                        await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
+                        updatedCount++;
+                    }
+
+                    lastEvaluatedKey = response.LastEvaluatedKey;
+                } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text +=
+                        $"InitializeUserCidFieldsAsync finished. Updated {updatedCount} user(s), skipped {skippedCount} user(s).\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to initialize cid fields for users: {ex.Message}\r\n";
                 }));
             }
         }
