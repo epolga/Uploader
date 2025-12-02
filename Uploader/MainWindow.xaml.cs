@@ -645,7 +645,7 @@ namespace Uploader
             return source.Take(takeCount).ToList();
         }
 
-        private string BuildAlbumSuggestionsHtml(IReadOnlyList<AlbumInfo> albums)
+        private string BuildAlbumSuggestionsHtml(IReadOnlyList<AlbumInfo> albums, string? cid = null)
         {
             if (albums == null || albums.Count == 0)
                 return string.Empty;
@@ -660,6 +660,7 @@ namespace Uploader
                     ? $"Featured album {index}"
                     : album.Caption;
                 string url = _linkHelper.BuildAlbumUrl(album.AlbumId, album.Caption);
+                url = AppendCidParameter(url, cid);
 
                 sb.Append($"<li><a href=\"{WebUtility.HtmlEncode(url)}\">{WebUtility.HtmlEncode(caption)}</a></li>");
                 index++;
@@ -669,7 +670,7 @@ namespace Uploader
             return sb.ToString();
         }
 
-        private string BuildAlbumSuggestionsText(IReadOnlyList<AlbumInfo> albums)
+        private string BuildAlbumSuggestionsText(IReadOnlyList<AlbumInfo> albums, string? cid = null)
         {
             if (albums == null || albums.Count == 0)
                 return string.Empty;
@@ -685,6 +686,7 @@ namespace Uploader
                     ? $"Featured album {index}"
                     : album.Caption;
                 string url = _linkHelper.BuildAlbumUrl(album.AlbumId, album.Caption);
+                url = AppendCidParameter(url, cid);
 
                 sb.AppendLine($"- {caption}: {url}");
                 index++;
@@ -937,16 +939,18 @@ namespace Uploader
 
         private sealed class UserRecipient
         {
-            public UserRecipient(string email, string? firstName, AttributeValue? idAttribute = null)
+            public UserRecipient(string email, string? firstName, AttributeValue? idAttribute = null, string? cid = null)
             {
                 Email = email;
                 FirstName = firstName;
                 IdAttribute = idAttribute;
+                Cid = cid;
             }
 
             public string Email { get; }
             public string? FirstName { get; }
             public AttributeValue? IdAttribute { get; }
+            public string? Cid { get; }
         }
 
         private async Task<List<UserRecipient>> FetchAllUserEmailsAsync()
@@ -955,6 +959,7 @@ namespace Uploader
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string firstNameAttribute = ConfigurationManager.AppSettings["UserFirstNameAttribute"] ?? "FirstName";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
+            string userCidAttribute = ConfigurationManager.AppSettings["UserCidAttribute"] ?? "cid";
 
             var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var recipients = new List<UserRecipient>();
@@ -964,7 +969,7 @@ namespace Uploader
                 var scanRequest = new ScanRequest
                 {
                     TableName = usersTable,
-                    ProjectionExpression = $"{emailAttribute}, {firstNameAttribute}, {userIdAttribute}"
+                    ProjectionExpression = $"{emailAttribute}, {firstNameAttribute}, {userIdAttribute}, {userCidAttribute}"
                 };
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
@@ -1023,7 +1028,14 @@ namespace Uploader
                             idAttr = idValue;
                         }
 
-                        recipients.Add(new UserRecipient(email, firstName, idAttr));
+                        string? cid = null;
+                        if (item.TryGetValue(userCidAttribute, out var cidAttr) &&
+                            !string.IsNullOrWhiteSpace(cidAttr.S))
+                        {
+                            cid = cidAttr.S.Trim();
+                        }
+
+                        recipients.Add(new UserRecipient(email, firstName, idAttr, cid));
                     }
 
                     lastEvaluatedKey = response.LastEvaluatedKey;
@@ -1056,6 +1068,7 @@ namespace Uploader
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
+            string facebookUrl = "https://www.facebook.com/AnnCrossStitch/";
 
             if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
@@ -1070,28 +1083,31 @@ namespace Uploader
             string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
                 ? "New cross stitch pattern"
                 : PatternInfo.Title;
-            string safeTitleHtml = WebUtility.HtmlEncode(PatternInfo.Title ?? "cross stitch pattern");
-            string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
-            string albumText = BuildAlbumSuggestionsText(albumSuggestions);
-            string baseTextBody =
-                "I wanted to let you know that I’ve just uploaded a new kitten cross-stitch pattern on my site.\r\n" +
+
+            string BuildBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
+                "I wanted to let you know that I've just uploaded a new kitten cross-stitch pattern on my site.\r\n" +
                 "It turned out soft and cozy, and I hope it brings a smile while you stitch.\r\n\r\n" +
-                "If you try it, I’d love to see your progress or finished piece — feel free to reply and share.\r\n\r\n" +
+                "If you try it, I'd love to see your progress or finished piece - feel free to reply and share.\r\n\r\n" +
                 "Warmest regards,\r\n" +
                 "Ann\r\n\r\n" +
-                $"View and download: {patternUrl}\r\n" +
-                $"Visit {siteUrl} to explore more patterns and see what I'm uploading next.\r\n" +
-                $"Join me on Facebook: https://www.facebook.com/AnnCrossStitch/ — I'd love to connect.";
-            string baseHtmlBody =
-                "<p>I wanted to let you know that I’ve just uploaded a new kitten cross-stitch pattern on my site.</p>" +
+                $"View and download: {viewAndDownloadUrl}\r\n" +
+                $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
+                $"Join me on Facebook: {facebookLink} - I'd love to connect.";
+
+            string BuildBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
+                "<p>I wanted to let you know that I've just uploaded a new kitten cross-stitch pattern on my site.</p>" +
                 "<p>It turned out soft and cozy, and I hope it brings a smile while you stitch.</p>" +
-                "<p>If you try it, I’d love to see your progress or finished piece — feel free to reply and share.</p>" +
+                "<p>If you try it, I'd love to see your progress or finished piece - feel free to reply and share.</p>" +
                 "<p>Warmest regards,<br/>Ann</p>" +
-                $"<p><a href=\"{patternUrl}\"><img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
-                $"<p><a href=\"{patternUrl}\">Click here to view and download the pattern</a></p>" +
-                $"<p>Visit <a href=\"{siteUrl}\">{siteUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
-                $"<p>Join me on Facebook: <a href=\"https://www.facebook.com/AnnCrossStitch/\">Ann Cross Stitch</a>. I'd love to connect.</p>" +
-                albumHtml;
+                $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
+                $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
+                $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
+                $"<p>Join me on Facebook: <a href=\"{facebookLink}\">Ann Cross Stitch</a>. I'd love to connect.</p>";
+
+            string baseTextBody = BuildBaseTextBody(patternUrl, siteUrl, facebookUrl);
+            string baseHtmlBody = BuildBaseHtmlBody(patternUrl, imageUrl, siteUrl, facebookUrl, altText);
+            string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
+            string albumText = BuildAlbumSuggestionsText(albumSuggestions);
 
             // Send the same email to admin first.
             if (!string.IsNullOrEmpty(admin))
@@ -1131,12 +1147,22 @@ namespace Uploader
 
             foreach (var recipient in recipients)
             {
+                string cid = recipient.Cid ?? string.Empty;
+                string patternUrlWithCid = AppendCidParameter(patternUrl, cid);
+                string siteUrlWithCid = AppendCidParameter(siteUrl, cid);
+                string imageUrlWithCid = AppendCidParameter(imageUrl, cid);
+                string facebookUrlWithCid = AppendCidParameter(facebookUrl, cid);
+                string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid);
+                string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid);
+
                 string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
                 string greetingText = BuildGreetingText(recipient.FirstName);
                 string greetingHtml = BuildGreetingHtml(recipient.FirstName);
-                string userText = greetingText + baseTextBody + albumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
-                string userHtml = greetingHtml + baseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+                string userBaseTextBody = BuildBaseTextBody(patternUrlWithCid, siteUrlWithCid, facebookUrlWithCid);
+                string userBaseHtmlBody = BuildBaseHtmlBody(patternUrlWithCid, imageUrlWithCid, siteUrlWithCid, facebookUrlWithCid, altText);
+                string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
+                string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -1244,6 +1270,15 @@ namespace Uploader
                 .TrimEnd('=')
                 .Replace('+', '-')
                 .Replace('/', '_');
+        }
+
+        private static string AppendCidParameter(string url, string? cid)
+        {
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(cid))
+                return url;
+
+            string separator = url.Contains("?") ? "&" : "?";
+            return $"{url}{separator}cid={Uri.EscapeDataString(cid)}";
         }
 
         private static Dictionary<string, string> BuildUnsubscribeHeaders(string unsubscribeUrl, string sender)
