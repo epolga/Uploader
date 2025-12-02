@@ -259,22 +259,22 @@ namespace Uploader
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-            
+
         #endregion
 
-            #region Pattern info and album helpers (no UI access inside)
+        #region Pattern info and album helpers (no UI access inside)
 
-            /// <summary>
-            /// Creates PatternInfo from 1.pdf in the batch folder and enriches it
-            /// with AlbumId, NPage and DesignID from DynamoDB.
-            /// </summary>
+        /// <summary>
+        /// Creates PatternInfo from 1.pdf in the batch folder and enriches it
+        /// with AlbumId, NPage and DesignID from DynamoDB.
+        /// </summary>
         private async Task<PatternInfo> CreatePatternInfoAsync()
         {
             string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
             var patternInfo = new PatternInfo(pdfPath);
 
             patternInfo.AlbumId = LoadAlbumIdFromTxt();
-            if(patternInfo.AlbumId == 0)
+            if (patternInfo.AlbumId == 0)
             {
                 throw new Exception("Failed to load AlbumID from .txt file.");
             }
@@ -1075,7 +1075,7 @@ namespace Uploader
                 return;
 
             const int batchSize = 50; // SES supports up to 50 destinations per request.
-            string subject = "❌🪡❌🪡❌ I’ve just uploaded a new kitten pattern 🐱💛";
+            string subject = "🧵🕊️ Your Cross-Stitch Pattern is Here! 🕊️🧵";
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
@@ -1087,9 +1087,10 @@ namespace Uploader
             string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
 
             string BuildBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-                "I wanted to let you know that I've just uploaded a new kitten cross-stitch pattern on my site.\r\n" +
-                "It turned out soft and cozy, and I hope it brings a smile while you stitch.\r\n\r\n" +
-                "If you try it, I'd love to see your progress or finished piece - feel free to reply and share.\r\n\r\n" +
+                "I hope this message finds you well! I'm excited to share with you a lovely cross-stitch pattern featuring a beautifully detailed bird in flight.\r\n" +
+                "The design captures the grace of the bird with its outstretched wings against a serene backdrop of clouds. The soft colors make it perfect for your next stitching project.\r\n" +
+                "Each stitch will bring this charming piece to life, adding a touch of nature's beauty to your collection.\r\n\r\n" +
+                "I hope you enjoy stitching this pattern as much as I enjoyed creating it for you. Happy stitching!\r\n\r\n" +
                 "Warmest regards,\r\n" +
                 "Ann\r\n\r\n" +
                 $"View and download: {viewAndDownloadUrl}\r\n" +
@@ -1097,9 +1098,10 @@ namespace Uploader
                 $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
             string BuildBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-                "<p>I wanted to let you know that I've just uploaded a new kitten cross-stitch pattern on my site.</p>" +
-                "<p>It turned out soft and cozy, and I hope it brings a smile while you stitch.</p>" +
-                "<p>If you try it, I'd love to see your progress or finished piece - feel free to reply and share.</p>" +
+                "<p>I hope this message finds you well! I'm excited to share with you a lovely cross-stitch pattern featuring a beautifully detailed bird in flight.</p>" +
+                "<p>The design captures the grace of the bird with its outstretched wings against a serene backdrop of clouds. The soft colors make it perfect for your next stitching project.</p>" +
+                "<p>Each stitch will bring this charming piece to life, adding a touch of nature's beauty to your collection.</p>" +
+                "<p>I hope you enjoy stitching this pattern as much as I enjoyed creating it for you. Happy stitching!</p>" +
                 "<p>Warmest regards,<br/>Ann</p>" +
                 $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
                 $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
