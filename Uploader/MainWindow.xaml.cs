@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
 using Amazon;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.DocumentModel;
@@ -645,7 +646,7 @@ namespace Uploader
             return source.Take(takeCount).ToList();
         }
 
-        private string BuildAlbumSuggestionsHtml(IReadOnlyList<AlbumInfo> albums, string? cid = null)
+        private string BuildAlbumSuggestionsHtml(IReadOnlyList<AlbumInfo> albums, string? cid = null, string? eid = null)
         {
             if (albums == null || albums.Count == 0)
                 return string.Empty;
@@ -660,7 +661,7 @@ namespace Uploader
                     ? $"Featured album {index}"
                     : album.Caption;
                 string url = _linkHelper.BuildAlbumUrl(album.AlbumId, album.Caption);
-                url = AppendCidParameter(url, cid);
+                url = AppendTrackingParameters(url, cid, eid);
 
                 sb.Append($"<li><a href=\"{WebUtility.HtmlEncode(url)}\">{WebUtility.HtmlEncode(caption)}</a></li>");
                 index++;
@@ -670,7 +671,7 @@ namespace Uploader
             return sb.ToString();
         }
 
-        private string BuildAlbumSuggestionsText(IReadOnlyList<AlbumInfo> albums, string? cid = null)
+        private string BuildAlbumSuggestionsText(IReadOnlyList<AlbumInfo> albums, string? cid = null, string? eid = null)
         {
             if (albums == null || albums.Count == 0)
                 return string.Empty;
@@ -686,7 +687,7 @@ namespace Uploader
                     ? $"Featured album {index}"
                     : album.Caption;
                 string url = _linkHelper.BuildAlbumUrl(album.AlbumId, album.Caption);
-                url = AppendCidParameter(url, cid);
+                url = AppendTrackingParameters(url, cid, eid);
 
                 sb.AppendLine($"- {caption}: {url}");
                 index++;
@@ -1083,6 +1084,7 @@ namespace Uploader
             string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
                 ? "New cross stitch pattern"
                 : PatternInfo.Title;
+            string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
 
             string BuildBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
                 "I wanted to let you know that I've just uploaded a new kitten cross-stitch pattern on my site.\r\n" +
@@ -1148,19 +1150,19 @@ namespace Uploader
             foreach (var recipient in recipients)
             {
                 string cid = recipient.Cid ?? string.Empty;
-                string patternUrlWithCid = AppendCidParameter(patternUrl, cid);
-                string siteUrlWithCid = AppendCidParameter(siteUrl, cid);
-                string imageUrlWithCid = AppendCidParameter(imageUrl, cid);
-                string facebookUrlWithCid = AppendCidParameter(facebookUrl, cid);
-                string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid);
-                string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid);
+                string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
+                string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
+                string imageUrlWithTracking = AppendTrackingParameters(imageUrl, cid, eid);
+                string facebookUrlWithTracking = AppendTrackingParameters(facebookUrl, cid, eid);
+                string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
+                string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
 
                 string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
                 string greetingText = BuildGreetingText(recipient.FirstName);
                 string greetingHtml = BuildGreetingHtml(recipient.FirstName);
-                string userBaseTextBody = BuildBaseTextBody(patternUrlWithCid, siteUrlWithCid, facebookUrlWithCid);
-                string userBaseHtmlBody = BuildBaseHtmlBody(patternUrlWithCid, imageUrlWithCid, siteUrlWithCid, facebookUrlWithCid, altText);
+                string userBaseTextBody = BuildBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrlWithTracking);
+                string userBaseHtmlBody = BuildBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrlWithTracking, altText);
                 string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
                 string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
@@ -1272,13 +1274,22 @@ namespace Uploader
                 .Replace('/', '_');
         }
 
-        private static string AppendCidParameter(string url, string? cid)
+        private static string AppendTrackingParameters(string url, string? cid, string? eid)
         {
-            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(cid))
+            if (string.IsNullOrWhiteSpace(url))
+                return url;
+
+            var queryParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(cid))
+                queryParts.Add($"cid={Uri.EscapeDataString(cid)}");
+            if (!string.IsNullOrWhiteSpace(eid))
+                queryParts.Add($"eid={Uri.EscapeDataString(eid)}");
+
+            if (queryParts.Count == 0)
                 return url;
 
             string separator = url.Contains("?") ? "&" : "?";
-            return $"{url}{separator}cid={Uri.EscapeDataString(cid)}";
+            return $"{url}{separator}{string.Join("&", queryParts)}";
         }
 
         private static Dictionary<string, string> BuildUnsubscribeHeaders(string unsubscribeUrl, string sender)
