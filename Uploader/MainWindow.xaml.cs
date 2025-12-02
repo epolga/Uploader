@@ -1075,7 +1075,7 @@ namespace Uploader
                 return;
 
             const int batchSize = 50; // SES supports up to 50 destinations per request.
-            string subject = "🧵🕊️ Your Cross-Stitch Pattern is Here! 🕊️🧵";
+            string subject = "❌🪡❌🪡❌ Your Cross-Stitch Pattern is Here! 🕊️🧵";
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
@@ -1155,7 +1155,6 @@ namespace Uploader
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
                 string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
                 string imageUrlWithTracking = AppendTrackingParameters(imageUrl, cid, eid);
-                string facebookUrlWithTracking = AppendTrackingParameters(facebookUrl, cid, eid);
                 string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
                 string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
 
@@ -1163,8 +1162,8 @@ namespace Uploader
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
                 string greetingText = BuildGreetingText(recipient.FirstName);
                 string greetingHtml = BuildGreetingHtml(recipient.FirstName);
-                string userBaseTextBody = BuildBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrlWithTracking);
-                string userBaseHtmlBody = BuildBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrlWithTracking, altText);
+                string userBaseTextBody = BuildBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
+                string userBaseHtmlBody = BuildBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
                 string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
                 string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
