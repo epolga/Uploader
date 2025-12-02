@@ -1,22 +1,9 @@
-This is what I want to do:
+ï»¿You can track opens/clicks, then opt-out inactive people automatically, but do it safely and legally (honor consent, include unsubscribe). Options:
 
- I want to remove S3 related text box and specific file related text box. And add new readonly textbox (or lable or something like that) for Album number. The program should choose folder. The structure of the folder will be as following:
-
-
-
-
-
-<AlbumID>.txt - AlbumID will be treated as a number of Album. For example 7.txt means that the number of album will be 7. And the text control devoted to Album number should reflect it.
-
-
-
-1.pdf file
-
-
-
-<DesignName>.scc file
-
-s3://cross-stitch-designs/ url will be stored in configuration I added DynamoDB table description to the metadata The <DesignID> will be <maximal design from the table> + 1.   <DesignName>.css will be uploaded to s3://cross-stitch-designs/charts/ , but it's name will be replaced by 'DesignID'(padded with leading zeros to length 5) + '_' + DesignName + '.css' 1.pdf will be renamed to Stitch<DesignID>_Kit.pdf and uploaded to s3://cross-stitch-designs/pdfs/<AlbumID>   New design with appropriate DesignName, DesignID and AlbumID should be added to DynamoDB table.
-
-
-
+Opens (approximate): Add a tiny tracking pixel URL you host (e.g., /open?id=<token>). When the image loads, log the token and time. Not 100% reliable because many clients block images.
+Clicks (better): Wrap email links with a redirect you control (/t/<token>?u=<encodedUrl>). Log on hit, then 302 to the real link. Clicks are a stronger engagement signal than opens.
+Tokens: Use a per-recipient token (e.g., HMAC of email + secret) to avoid storing raw emails in URLs, and map token â†’ email server-side.
+Unsub logic: Keep your current unsubscribe links, but add a background job to mark users unsubscribed after a chosen period with zero opens/clicks (e.g., 90 days). Never silently delete; set Unsubscribed = true and stop mailing. Always respect explicit unsubscribes immediately.
+Bounces/complaints: If you use SES/SendGrid/etc., hook their SNS/webhooks to auto-suppress hard bounces and complaints.
+Client caveats: Opens can be inflated by mail provider proxies; clicks are most trustworthy. Auto-unsub should be conservative to avoid dropping engaged users who block images.
+If you want, I can add: 1) a tracking pixel endpoint; 2) redirect-based tracking links; 3) a scheduled task to auto-unsubscribe inactive users.
