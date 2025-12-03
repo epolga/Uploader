@@ -1074,7 +1074,7 @@ namespace Uploader
             if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
 
-                        string subject = ❌🪡❌🪡❌ Unveiling Your New Cross-Stitch Pattern: "Dream" ❌🪡❌🪡❌;
+            string subject = "❌🪡❌🪡❌ Unveiling Your New Cross-Stitch Pattern: \"Dream\" ❌🪡❌🪡❌";
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
