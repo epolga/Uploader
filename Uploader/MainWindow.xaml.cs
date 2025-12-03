@@ -1074,8 +1074,7 @@ namespace Uploader
             if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
 
-            const int batchSize = 50; // SES supports up to 50 destinations per request.
-            string subject = "❌🪡❌🪡❌ Your Cross-Stitch Pattern is Here! 🕊️🧵";
+                        string subject = ❌🪡❌🪡❌ Unveiling Your New Cross-Stitch Pattern: "Dream" ❌🪡❌🪡❌;
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
@@ -1087,10 +1086,10 @@ namespace Uploader
             string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
 
             string BuildBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-                "I hope this message finds you well! I'm excited to share with you a lovely cross-stitch pattern featuring a beautifully detailed bird in flight.\r\n" +
-                "The design captures the grace of the bird with its outstretched wings against a serene backdrop of clouds. The soft colors make it perfect for your next stitching project.\r\n" +
-                "Each stitch will bring this charming piece to life, adding a touch of nature's beauty to your collection.\r\n\r\n" +
-                "I hope you enjoy stitching this pattern as much as I enjoyed creating it for you. Happy stitching!\r\n\r\n" +
+                "I hope this message finds you in great spirits! I'm thrilled to share with you the cross-stitch pattern titled \"Dream.\"\r\n" +
+                "This beautiful design features a magnificent bird soaring through a serene sky, its feathers rendered in stunning shades of blue. The gentle clouds in the background create a calming atmosphere, making this piece not just a pattern, but a symbol of freedom and aspiration.\r\n" +
+                "As you embark on stitching this piece, I hope it inspires you to chase your dreams, just like the bird in flight. Take your time to enjoy the process, and let each stitch bring you a little closer to your own aspirations.\r\n\r\n" +
+                "Happy stitching!\r\n\r\n" +
                 "Warmest regards,\r\n" +
                 "Ann\r\n\r\n" +
                 $"View and download: {viewAndDownloadUrl}\r\n" +
@@ -1098,10 +1097,10 @@ namespace Uploader
                 $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
             string BuildBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-                "<p>I hope this message finds you well! I'm excited to share with you a lovely cross-stitch pattern featuring a beautifully detailed bird in flight.</p>" +
-                "<p>The design captures the grace of the bird with its outstretched wings against a serene backdrop of clouds. The soft colors make it perfect for your next stitching project.</p>" +
-                "<p>Each stitch will bring this charming piece to life, adding a touch of nature's beauty to your collection.</p>" +
-                "<p>I hope you enjoy stitching this pattern as much as I enjoyed creating it for you. Happy stitching!</p>" +
+                "<p>I hope this message finds you in great spirits! I'm thrilled to share with you the cross-stitch pattern titled \"Dream.\"</p>" +
+                "<p>This beautiful design features a magnificent bird soaring through a serene sky, its feathers rendered in stunning shades of blue. The gentle clouds in the background create a calming atmosphere, making this piece not just a pattern, but a symbol of freedom and aspiration.</p>" +
+                "<p>As you embark on stitching this piece, I hope it inspires you to chase your dreams, just like the bird in flight. Take your time to enjoy the process, and let each stitch bring you a little closer to your own aspirations.</p>" +
+                "<p>Happy stitching!</p>" +
                 "<p>Warmest regards,<br/>Ann</p>" +
                 $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
                 $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
@@ -1468,3 +1467,4 @@ namespace Uploader
         #endregion
     }
 }
+
