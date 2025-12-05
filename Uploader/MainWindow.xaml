@@ -143,6 +143,11 @@
                         Height="26"
                         Margin="10"
                         Click="InitializeUserCid_Click" />
+                <Button Content="Initialize CrossStitchItems User CIDs"
+                        Width="250"
+                        Height="26"
+                        Margin="10"
+                        Click="InitializeItemsUserCid_Click" />
 
                 <Button Content="Initialize User Unsubscribe"
                         Width="190"

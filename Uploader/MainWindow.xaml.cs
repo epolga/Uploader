@@ -867,6 +867,40 @@ namespace Uploader
         }
 
         /// <summary>
+        /// Counts users in a table with an optional filter.
+        /// </summary>
+        private async Task<int> CountUsersAsync(
+            string tableName,
+            string? filterExpression = null,
+            Dictionary<string, AttributeValue>? expressionValues = null)
+        {
+            var request = new ScanRequest
+            {
+                TableName = tableName,
+                Select = Select.COUNT
+            };
+
+            if (!string.IsNullOrWhiteSpace(filterExpression))
+            {
+                request.FilterExpression = filterExpression;
+                request.ExpressionAttributeValues = expressionValues;
+            }
+
+            int total = 0;
+            Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+            do
+            {
+                request.ExclusiveStartKey = lastEvaluatedKey;
+                var response = await _dynamoDbClient.ScanAsync(request).ConfigureAwait(false);
+                total += response.Count;
+                lastEvaluatedKey = response.LastEvaluatedKey;
+            } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+            return total;
+        }
+
+        /// <summary>
         /// Adds a per-user correlation id ("cid") if missing, using a random GUID.
         /// Existing cid values are preserved.
         /// </summary>
@@ -876,12 +910,24 @@ namespace Uploader
 
             int updatedCount = 0;
             int skippedCount = 0;
+            int missingNPageCount = 0;
+            int scannedCount = 0;
+            int totalCount = await CountUsersAsync(usersTable).ConfigureAwait(false);
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (totalCount > 0)
+                    txtStatus.Text += $"[CrossStitchUsers] Total users found: {totalCount}.\r\n";
+                else
+                    txtStatus.Text += "[CrossStitchUsers] Could not determine total users (count returned 0).\r\n";
+            }));
 
             try
             {
                 var scanRequest = new ScanRequest
                 {
-                    TableName = usersTable
+                    TableName = usersTable,
+                    ProjectionExpression = "ID, NPage, cid"
                 };
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
@@ -893,8 +939,17 @@ namespace Uploader
 
                     foreach (var item in response.Items)
                     {
+                        scannedCount++;
+
                         if (!item.TryGetValue("ID", out var idAttr))
                         {
+                            continue;
+                        }
+
+                        if (!item.TryGetValue("NPage", out var nPageAttr) ||
+                            string.IsNullOrWhiteSpace(nPageAttr.S))
+                        {
+                            missingNPageCount++;
                             continue;
                         }
 
@@ -913,7 +968,8 @@ namespace Uploader
                             TableName = usersTable,
                             Key = new Dictionary<string, AttributeValue>
                             {
-                                { "ID", idAttr }
+                                { "ID", idAttr },
+                                { "NPage", nPageAttr }
                             },
                             UpdateExpression = "SET cid = :cid",
                             ExpressionAttributeValues = new Dictionary<string, AttributeValue>
@@ -924,6 +980,25 @@ namespace Uploader
 
                         await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
                         updatedCount++;
+
+                        if ((updatedCount + skippedCount) % 50 == 0)
+                        {
+                            int progressUpdated = updatedCount;
+                            int progressSkipped = skippedCount;
+                            int progressScanned = scannedCount;
+                            int progressMissing = missingNPageCount;
+                            int remaining = totalCount > 0
+                                ? Math.Max(totalCount - (progressUpdated + progressSkipped + progressMissing), 0)
+                                : -1;
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                string remainingText = remaining >= 0
+                                    ? $"Remaining ~{remaining}"
+                                    : "Remaining: unknown";
+                                txtStatus.Text +=
+                                    $"[CrossStitchUsers] Scanned {progressScanned}, updated {progressUpdated}, skipped {progressSkipped}, missing NPage {progressMissing}. {remainingText}.\r\n";
+                            }));
+                        }
                     }
 
                     lastEvaluatedKey = response.LastEvaluatedKey;
@@ -932,7 +1007,7 @@ namespace Uploader
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     txtStatus.Text +=
-                        $"InitializeUserCidFieldsAsync finished. Updated {updatedCount} user(s), skipped {skippedCount} user(s).\r\n";
+                        $"InitializeUserCidFieldsAsync finished. Total {totalCount}, updated {updatedCount} user(s), skipped {skippedCount} user(s), missing NPage {missingNPageCount}.\r\n";
                 }));
             }
             catch (Exception ex)
@@ -940,6 +1015,135 @@ namespace Uploader
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     txtStatus.Text += $"Failed to initialize cid fields for users: {ex.Message}\r\n";
+                }));
+            }
+        }
+
+        /// <summary>
+        /// Adds cid for users stored in CrossStitchItems table (ID starts with USR#).
+        /// Progress is reported to the status control during processing.
+        /// </summary>
+        private async Task InitializeItemsUserCidFieldsAsync()
+        {
+            string tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
+
+            int updatedCount = 0;
+            int skippedCount = 0;
+            int scannedCount = 0;
+            int missingNPageCount = 0;
+            var filterValues = new Dictionary<string, AttributeValue>
+            {
+                { ":userPrefix", new AttributeValue { S = "USR#" } }
+            };
+            int totalCount = await CountUsersAsync(
+                    tableName,
+                    "begins_with(ID, :userPrefix)",
+                    filterValues)
+                .ConfigureAwait(false);
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (totalCount > 0)
+                    txtStatus.Text += $"[CrossStitchItems] Total users found: {totalCount}.\r\n";
+                else
+                    txtStatus.Text += "[CrossStitchItems] Could not determine total users (count returned 0).\r\n";
+            }));
+
+            try
+            {
+                var scanRequest = new ScanRequest
+                {
+                    TableName = tableName,
+                    FilterExpression = "begins_with(ID, :userPrefix)",
+                    ExpressionAttributeValues = filterValues,
+                    ProjectionExpression = "ID, NPage, cid"
+                };
+
+                Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+                do
+                {
+                    scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                    var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                    foreach (var item in response.Items)
+                    {
+                        scannedCount++;
+
+                        if (!item.TryGetValue("ID", out var idAttr) || string.IsNullOrWhiteSpace(idAttr.S))
+                        {
+                            continue;
+                        }
+
+                        if (!item.TryGetValue("NPage", out var nPageAttr) ||
+                            string.IsNullOrWhiteSpace(nPageAttr.S))
+                        {
+                            missingNPageCount++;
+                            continue;
+                        }
+
+                        bool hasCid =
+                            item.TryGetValue("cid", out var cidAttr) &&
+                            !string.IsNullOrWhiteSpace(cidAttr.S);
+
+                        if (hasCid)
+                        {
+                            skippedCount++;
+                            continue;
+                        }
+
+                        var updateRequest = new UpdateItemRequest
+                        {
+                            TableName = tableName,
+                            Key = new Dictionary<string, AttributeValue>
+                            {
+                                { "ID", idAttr },
+                                { "NPage", nPageAttr }
+                            },
+                            UpdateExpression = "SET cid = :cid",
+                            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                            {
+                                { ":cid", new AttributeValue { S = Guid.NewGuid().ToString("N") } }
+                            }
+                        };
+
+                        await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
+                        updatedCount++;
+
+                        if ((updatedCount + skippedCount) % 50 == 0)
+                        {
+                            int progressUpdated = updatedCount;
+                            int progressSkipped = skippedCount;
+                            int progressScanned = scannedCount;
+                            int progressMissing = missingNPageCount;
+                            int remaining = totalCount > 0
+                                ? Math.Max(totalCount - (progressUpdated + progressSkipped + progressMissing), 0)
+                                : -1;
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                string remainingText = remaining >= 0
+                                    ? $"Remaining ~{remaining}"
+                                    : "Remaining: unknown";
+                                txtStatus.Text +=
+                                    $"[CrossStitchItems] Scanned {progressScanned}, updated {progressUpdated}, skipped {progressSkipped}, missing NPage {progressMissing}. {remainingText}.\r\n";
+                            }));
+                        }
+                    }
+
+                    lastEvaluatedKey = response.LastEvaluatedKey;
+                } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text +=
+                        $"InitializeItemsUserCidFieldsAsync finished. Total {totalCount}, updated {updatedCount} user(s), skipped {skippedCount} user(s), missing NPage {missingNPageCount}.\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to initialize cid fields for CrossStitchItems users: {ex.Message}\r\n";
                 }));
             }
         }
@@ -1467,6 +1671,23 @@ namespace Uploader
             foreach (var kvp in designToAlbumMap)
             {
                 File.AppendAllLines("DesignToAlbumMap.csv", new[] { $"{kvp.Key},{kvp.Value}" });
+            }
+        }
+
+        private async void InitializeItemsUserCid_Click(object sender, RoutedEventArgs e)
+        {
+            txtStatus.Text += "Initializing cid fields for CrossStitchItems users...\r\n";
+            try
+            {
+                await InitializeItemsUserCidFieldsAsync();
+                // Back on UI thread
+                txtStatus.Text += "Finished initializing cid fields for CrossStitchItems users.\r\n";
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text += $"Error: {ex.Message}\r\n";
+                MessageBox.Show(ex.ToString(), "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
