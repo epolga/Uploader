@@ -7,6 +7,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Diagnostics;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Security.Cryptography;
@@ -1269,6 +1270,115 @@ namespace Uploader
             return recipients;
         }
 
+        private async Task<List<UserRecipient>> FetchItemUserEmailsAsync()
+        {
+            string tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
+            string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
+            string firstNameAttribute = ConfigurationManager.AppSettings["UserFirstNameAttribute"] ?? "FirstName";
+            string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
+            string userCidAttribute = ConfigurationManager.AppSettings["UserCidAttribute"] ?? "cid";
+
+            var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var recipients = new List<UserRecipient>();
+
+            try
+            {
+                var scanRequest = new ScanRequest
+                {
+                    TableName = tableName,
+                    FilterExpression = "begins_with(ID, :userPrefix)",
+                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        { ":userPrefix", new AttributeValue { S = "USR#" } }
+                    },
+                    ProjectionExpression = $"{emailAttribute}, {firstNameAttribute}, {userIdAttribute}, {userCidAttribute}"
+                };
+
+                Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+                do
+                {
+                    scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                    var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                    foreach (var item in response.Items)
+                    {
+                        if (!item.TryGetValue(emailAttribute, out var emailAttr))
+                            continue;
+
+                        string? email = null;
+                        if (!string.IsNullOrWhiteSpace(emailAttr.S))
+                        {
+                            email = emailAttr.S.Trim();
+                        }
+                        else if (emailAttr.L != null && emailAttr.L.Count > 0)
+                        {
+                            foreach (var entry in emailAttr.L)
+                            {
+                                if (!string.IsNullOrWhiteSpace(entry.S))
+                                {
+                                    email = entry.S.Trim();
+                                }
+                            }
+                        }
+
+                        if (string.IsNullOrWhiteSpace(email))
+                            continue;
+
+                        if (!emails.Add(email))
+                            continue;
+
+                        string? firstName = null;
+                        if (item.TryGetValue(firstNameAttribute, out var firstNameAttr))
+                        {
+                            if (!string.IsNullOrWhiteSpace(firstNameAttr.S))
+                            {
+                                firstName = firstNameAttr.S.Trim();
+                            }
+                            else if (firstNameAttr.L != null && firstNameAttr.L.Count > 0)
+                            {
+                                firstName = firstNameAttr.L
+                                    .Select(entry => entry.S)
+                                    .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s))
+                                    ?.Trim();
+                            }
+                        }
+
+                        AttributeValue? idAttr = null;
+                        if (item.TryGetValue(userIdAttribute, out var idValue))
+                        {
+                            idAttr = idValue;
+                        }
+
+                        string? cid = null;
+                        if (item.TryGetValue(userCidAttribute, out var cidAttr) &&
+                            !string.IsNullOrWhiteSpace(cidAttr.S))
+                        {
+                            cid = cidAttr.S.Trim();
+                        }
+
+                        recipients.Add(new UserRecipient(email, firstName, idAttr, cid));
+                    }
+
+                    lastEvaluatedKey = response.LastEvaluatedKey;
+                } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"[CrossStitchItems] Fetched {recipients.Count} user emails.\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"[CrossStitchItems] Failed to fetch user emails: {ex.Message}\r\n";
+                }));
+            }
+
+            return recipients;
+        }
+
         private async Task SendAdminUserStyleEmailAsync(IReadOnlyList<AlbumInfo> albumSuggestions)
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
@@ -1325,6 +1435,7 @@ namespace Uploader
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+            string itemsTable = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
             string facebookUrl = "https://www.facebook.com/AnnCrossStitch/";
@@ -1374,50 +1485,61 @@ namespace Uploader
                     .ToList();
             }
 
-            foreach (var recipient in recipients)
+            int totalUserCount = await CountUsersAsync(usersTable).ConfigureAwait(false);
+            await SendEmailsWithProgressAsync(
+                "[CrossStitchUsers]",
+                recipients,
+                subject,
+                sender,
+                patternUrl,
+                siteUrl,
+                imageUrl,
+                facebookUrl,
+                altText,
+                albumSuggestions,
+                eid,
+                totalUserCount,
+                true,
+                usersTable,
+                emailAttribute,
+                userIdAttribute).ConfigureAwait(false);
+
+            // Send to users stored in CrossStitchItems (IDs start with USR#).
+            var itemRecipients = await FetchItemUserEmailsAsync().ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(admin))
             {
-                string cid = recipient.Cid ?? string.Empty;
-                string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
-                string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
-                string imageUrlWithTracking = AppendTrackingParameters(imageUrl, cid, eid);
-                string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
-                string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
-
-                string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
-                var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-                string greetingText = BuildUserGreetingText(recipient.FirstName);
-                string greetingHtml = BuildUserGreetingHtml(recipient.FirstName);
-                string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
-                string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
-                string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
-                string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
-
-                await _emailHelper.SendEmailAsync(
-                    _sesClient,
-                    sender,
-                    new[] { recipient.Email },
-                    subject,
-                    userText,
-                    userHtml,
-                    unsubscribeHeaders).ConfigureAwait(false);
-
-                try
-                {
-                    await UpdateLastEmailDateAsync(recipient, usersTable, emailAttribute, userIdAttribute)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        txtStatus.Text += $"Failed to update LastEmailDate for {recipient.Email}: {ex.Message}\r\n";
-                    }));
-                }
+                itemRecipients = itemRecipients
+                    .Where(r => !string.Equals(r.Email, admin, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
             }
+
+            int totalItemUserCount = await CountUsersAsync(
+                    itemsTable,
+                    "begins_with(ID, :userPrefix)",
+                    new Dictionary<string, AttributeValue> { { ":userPrefix", new AttributeValue { S = "USR#" } } })
+                .ConfigureAwait(false);
+
+            await SendEmailsWithProgressAsync(
+                "[CrossStitchItems]",
+                itemRecipients,
+                subject,
+                sender,
+                patternUrl,
+                siteUrl,
+                imageUrl,
+                facebookUrl,
+                altText,
+                albumSuggestions,
+                eid,
+                totalItemUserCount,
+                false,
+                itemsTable,
+                emailAttribute,
+                userIdAttribute).ConfigureAwait(false);
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                txtStatus.Text += $"Sent notification email to {recipients.Count} users.\r\n";
+                txtStatus.Text += $"Sent notification email to {recipients.Count} CrossStitchUsers and {itemRecipients.Count} CrossStitchItems users.\r\n";
             }));
         }
 
@@ -1526,6 +1648,106 @@ namespace Uploader
                 { "List-Unsubscribe", $"<{mailto}>, <{unsubscribeUrl}>" },
                 { "List-Unsubscribe-Post", "List-Unsubscribe=One-Click" }
             };
+        }
+
+        private async Task SendEmailsWithProgressAsync(
+            string label,
+            List<UserRecipient> recipients,
+            string subject,
+            string sender,
+            string patternUrl,
+            string siteUrl,
+            string imageUrl,
+            string facebookUrl,
+            string altText,
+            IReadOnlyList<AlbumInfo> albumSuggestions,
+            string eid,
+            int totalCount,
+            bool updateLastEmailDate,
+            string usersTable,
+            string emailAttribute,
+            string userIdAttribute)
+        {
+            if (recipients == null || recipients.Count == 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"{label} No recipients found.\r\n";
+                }));
+                return;
+            }
+
+            int targetCount = Math.Max(totalCount, recipients.Count);
+            var stopwatch = Stopwatch.StartNew();
+            int sent = 0;
+
+            foreach (var recipient in recipients)
+            {
+                string cid = recipient.Cid ?? string.Empty;
+                string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
+                string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
+                string imageUrlWithTracking = AppendTrackingParameters(imageUrl, cid, eid);
+                string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
+                string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
+
+                string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
+                var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
+                string greetingText = BuildUserGreetingText(recipient.FirstName);
+                string greetingHtml = BuildUserGreetingHtml(recipient.FirstName);
+                string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
+                string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
+                string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
+                string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+
+                await _emailHelper.SendEmailAsync(
+                    _sesClient,
+                    sender,
+                    new[] { recipient.Email },
+                    subject,
+                    userText,
+                    userHtml,
+                    unsubscribeHeaders).ConfigureAwait(false);
+
+                if (updateLastEmailDate)
+                {
+                    try
+                    {
+                        await UpdateLastEmailDateAsync(recipient, usersTable, emailAttribute, userIdAttribute)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            txtStatus.Text += $"{label} Failed to update LastEmailDate for {recipient.Email}: {ex.Message}\r\n";
+                        }));
+                    }
+                }
+
+                sent++;
+
+                if (sent % 50 == 0 || sent == recipients.Count)
+                {
+                    TimeSpan elapsed = stopwatch.Elapsed;
+                    double avgSeconds = sent > 0 ? elapsed.TotalSeconds / sent : 0;
+                    int remaining = Math.Max(targetCount - sent, 0);
+                    TimeSpan eta = avgSeconds > 0 ? TimeSpan.FromSeconds(avgSeconds * remaining) : TimeSpan.Zero;
+                    double percentRemaining = targetCount > 0 ? (remaining * 100.0 / targetCount) : 0;
+
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        txtStatus.Text +=
+                            $"{label} Sent {sent}/{targetCount} | Elapsed {elapsed:hh\\:mm\\:ss} | Avg {avgSeconds:F2}s/email | ETA {eta:hh\\:mm\\:ss} | Remaining {remaining} ({percentRemaining:F1}% left).\r\n";
+                    }));
+                }
+            }
+
+            stopwatch.Stop();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text += $"{label} Finished sending {sent} email(s) in {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
+            }));
         }
 
         private static string BuildUserGreetingText(string? firstName) =>
