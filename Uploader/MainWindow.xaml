@@ -148,6 +148,11 @@
                         Height="26"
                         Margin="10"
                         Click="InitializeItemsUserCid_Click" />
+                <Button Content="Send Admin Test Email"
+                        Width="190"
+                        Height="26"
+                        Margin="10"
+                        Click="SendAdminUserEmail_Click" />
 
                 <Button Content="Initialize User Unsubscribe"
                         Width="190"

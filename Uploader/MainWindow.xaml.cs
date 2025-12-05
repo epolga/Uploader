@@ -64,6 +64,7 @@ namespace Uploader
         private string _batchFolderPath = string.Empty;
 
         private const string PhotoPrefix = "photos";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ Your Adorable Cross-Stitch Pattern: \"Kitty Delight\" 🐱🐱🐱🐱🐱";
         private int _albumId;
 
         public PatternInfo? PatternInfo { get; private set; }
@@ -1268,6 +1269,53 @@ namespace Uploader
             return recipients;
         }
 
+        private async Task SendAdminUserStyleEmailAsync(IReadOnlyList<AlbumInfo> albumSuggestions)
+        {
+            string? sender = ConfigurationManager.AppSettings["SenderEmail"];
+            string? admin = ConfigurationManager.AppSettings["AdminEmail"];
+            string facebookUrl = "https://www.facebook.com/AnnCrossStitch/";
+
+            if (PatternInfo == null || string.IsNullOrEmpty(sender) || string.IsNullOrEmpty(admin))
+                return;
+
+            int designId = PatternInfo.DesignID;
+            string subject = UserEmailSubject;
+            string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
+            string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
+            string siteUrl = patternUrl;
+            if (Uri.TryCreate(patternUrl, UriKind.Absolute, out var patternUri))
+                siteUrl = patternUri.GetLeftPart(UriPartial.Authority);
+            string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
+                ? "New cross stitch pattern"
+                : PatternInfo.Title;
+            string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
+            string cid = "admin";
+
+            string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
+            string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
+            string imageUrlWithTracking = AppendTrackingParameters(imageUrl, cid, eid);
+            string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
+            string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
+
+            string unsubscribeUrl = BuildUnsubscribeUrl(admin);
+            var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
+            string greetingText = BuildUserGreetingText("admin");
+            string greetingHtml = BuildUserGreetingHtml("admin");
+            string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
+            string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
+            string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
+            string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+
+            await _emailHelper.SendEmailAsync(
+                _sesClient,
+                sender,
+                new[] { admin },
+                subject,
+                userText,
+                userHtml,
+                unsubscribeHeaders).ConfigureAwait(false);
+        }
+
         private async Task SendNotificationMailToUsersAsync(
             int designId,
             string pinId,
@@ -1284,7 +1332,7 @@ namespace Uploader
             if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
 
-            string subject = "❌🪡❌🪡❌ Unveiling Your New Cross-Stitch Pattern: \"Dream\" ❌🪡❌🪡❌";
+            string subject = UserEmailSubject;
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
             string siteUrl = patternUrl;
@@ -1295,30 +1343,8 @@ namespace Uploader
                 : PatternInfo.Title;
             string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
 
-            string BuildBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-                "I hope this message finds you in great spirits! I'm thrilled to share with you the cross-stitch pattern titled \"Dream.\"\r\n" +
-                "This beautiful design features a magnificent bird soaring through a serene sky, its feathers rendered in stunning shades of blue. The gentle clouds in the background create a calming atmosphere, making this piece not just a pattern, but a symbol of freedom and aspiration.\r\n" +
-                "As you embark on stitching this piece, I hope it inspires you to chase your dreams, just like the bird in flight. Take your time to enjoy the process, and let each stitch bring you a little closer to your own aspirations.\r\n\r\n" +
-                "Happy stitching!\r\n\r\n" +
-                "Warmest regards,\r\n" +
-                "Ann\r\n\r\n" +
-                $"View and download: {viewAndDownloadUrl}\r\n" +
-                $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
-                $"Join me on Facebook: {facebookLink} - I'd love to connect.";
-
-            string BuildBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-                "<p>I hope this message finds you in great spirits! I'm thrilled to share with you the cross-stitch pattern titled \"Dream.\"</p>" +
-                "<p>This beautiful design features a magnificent bird soaring through a serene sky, its feathers rendered in stunning shades of blue. The gentle clouds in the background create a calming atmosphere, making this piece not just a pattern, but a symbol of freedom and aspiration.</p>" +
-                "<p>As you embark on stitching this piece, I hope it inspires you to chase your dreams, just like the bird in flight. Take your time to enjoy the process, and let each stitch bring you a little closer to your own aspirations.</p>" +
-                "<p>Happy stitching!</p>" +
-                "<p>Warmest regards,<br/>Ann</p>" +
-                $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
-                $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
-                $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
-                $"<p>Join me on Facebook: <a href=\"{facebookLink}\">Ann Cross Stitch</a>. I'd love to connect.</p>";
-
-            string baseTextBody = BuildBaseTextBody(patternUrl, siteUrl, facebookUrl);
-            string baseHtmlBody = BuildBaseHtmlBody(patternUrl, imageUrl, siteUrl, facebookUrl, altText);
+            string baseTextBody = BuildUserBaseTextBody(patternUrl, siteUrl, facebookUrl);
+            string baseHtmlBody = BuildUserBaseHtmlBody(patternUrl, imageUrl, siteUrl, facebookUrl, altText);
             string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
             string albumText = BuildAlbumSuggestionsText(albumSuggestions);
 
@@ -1348,16 +1374,6 @@ namespace Uploader
                     .ToList();
             }
 
-            string BuildGreetingText(string? firstName) =>
-                !string.IsNullOrWhiteSpace(firstName)
-                    ? $"Dear {firstName},\r\n"
-                    : "Hello,\r\n";
-
-            string BuildGreetingHtml(string? firstName) =>
-                !string.IsNullOrWhiteSpace(firstName)
-                    ? $"<p>Dear {WebUtility.HtmlEncode(firstName)},</p>"
-                    : "<p>Hello,</p>";
-
             foreach (var recipient in recipients)
             {
                 string cid = recipient.Cid ?? string.Empty;
@@ -1369,10 +1385,10 @@ namespace Uploader
 
                 string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-                string greetingText = BuildGreetingText(recipient.FirstName);
-                string greetingHtml = BuildGreetingHtml(recipient.FirstName);
-                string userBaseTextBody = BuildBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
-                string userBaseHtmlBody = BuildBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
+                string greetingText = BuildUserGreetingText(recipient.FirstName);
+                string greetingHtml = BuildUserGreetingHtml(recipient.FirstName);
+                string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
+                string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
                 string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
                 string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
@@ -1511,6 +1527,40 @@ namespace Uploader
                 { "List-Unsubscribe-Post", "List-Unsubscribe=One-Click" }
             };
         }
+
+        private static string BuildUserGreetingText(string? firstName) =>
+            !string.IsNullOrWhiteSpace(firstName)
+                ? $"Dear {firstName},\r\n"
+                : "Hello,\r\n";
+
+        private static string BuildUserGreetingHtml(string? firstName) =>
+            !string.IsNullOrWhiteSpace(firstName)
+                ? $"<p>Dear {WebUtility.HtmlEncode(firstName)},</p>"
+                : "<p>Hello,</p>";
+
+        private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
+            "Hope this message brings a smile to your day! I'm excited to share the cross-stitch pattern featuring our charming little friend, the kitty.\r\n" +
+            "This delightful design showcases a playful orange cat with a cheeky wink and an endearing smile, perfect for bringing joy to your stitching experience.\r\n" +
+            "The vibrant colors and cute expression capture the essence of feline playfulness, making it a wonderful project for cat lovers like you!\r\n\r\n" +
+            "As you embark on this stitching journey, I hope this pattern inspires countless moments of joy and creativity. Let each stitch remind you of the warmth and happiness that pets bring into our lives.\r\n\r\n" +
+            "Happy stitching!\r\n" +
+            "Warmly,\r\n" +
+            "Ann\r\n\r\n" +
+            $"View and download: {viewAndDownloadUrl}\r\n" +
+            $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
+            $"Join me on Facebook: {facebookLink} - I'd love to connect.";
+
+        private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
+            "<p>Hope this message brings a smile to your day! I'm excited to share the cross-stitch pattern featuring our charming little friend, the kitty.</p>" +
+            "<p>This delightful design showcases a playful orange cat with a cheeky wink and an endearing smile, perfect for bringing joy to your stitching experience.</p>" +
+            "<p>The vibrant colors and cute expression capture the essence of feline playfulness, making it a wonderful project for cat lovers like you!</p>" +
+            "<p>As you embark on this stitching journey, I hope this pattern inspires countless moments of joy and creativity. Let each stitch remind you of the warmth and happiness that pets bring into our lives.</p>" +
+            "<p>Happy stitching!</p>" +
+            "<p>Warmly,<br/>Ann</p>" +
+            $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
+            $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
+            $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
+            $"<p>Join me on Facebook: <a href=\"{facebookLink}\">Ann Cross Stitch</a>. I'd love to connect.</p>";
 
         #endregion
 
@@ -1688,6 +1738,34 @@ namespace Uploader
                 txtStatus.Text += $"Error: {ex.Message}\r\n";
                 MessageBox.Show(ex.ToString(), "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void SendAdminUserEmail_Click(object sender, RoutedEventArgs e)
+        {
+            if (PatternInfo == null)
+            {
+                txtStatus.Text += "Extract PDF info before sending admin email.\r\n";
+                return;
+            }
+
+            txtStatus.Text += "Sending user-style email to admin (1 email)...\r\n";
+            try
+            {
+                var albumSuggestions = await FetchAlbumSuggestionsAsync(4).ConfigureAwait(false);
+                await SendAdminUserStyleEmailAsync(albumSuggestions).ConfigureAwait(false);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += "Sent user-style email to admin (1/1).\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to send admin user-style email: {ex.Message}\r\n";
+                }));
             }
         }
 
