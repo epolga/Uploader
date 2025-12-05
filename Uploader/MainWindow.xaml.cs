@@ -21,6 +21,7 @@ using Amazon.S3.Model;
 using Amazon.S3.Transfer;
 using Amazon.SimpleEmail;
 using Amazon.SimpleEmail.Model;
+using System.Windows.Controls;
 using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
 using UploadPatterns;
@@ -258,6 +259,11 @@ namespace Uploader
                 MessageBox.Show(ex.ToString(), "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void TxtStatus_OnTextChanged(object sender, TextChangedEventArgs e)
+        {
+            txtStatus.ScrollToEnd();
         }
 
         #endregion

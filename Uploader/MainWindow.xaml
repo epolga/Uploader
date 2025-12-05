@@ -2,8 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Cross Stitch Uploader"
-        Height="620"
         Width="820"
+        SizeToContent="Height"
+        MaxHeight="900"
         WindowStartupLocation="CenterScreen">
 
     <DockPanel>
@@ -114,8 +115,7 @@
         <StackPanel DockPanel.Dock="Bottom"
                     Orientation="Vertical">
 
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Left">
+            <WrapPanel HorizontalAlignment="Left">
                 <Button Content="Upload"
                         Width="80"
                         Height="26"
@@ -149,13 +149,18 @@
                         Height="26"
                         Margin="10"
                         Click="InitializeUserUnsubscribe_Click" />
-            </StackPanel>
+            </WrapPanel>
 
-            <TextBlock x:Name="txtStatus"
-                       Height="480"
-                       Margin="5"
-                       TextWrapping="Wrap"
-                       Foreground="Green" />
+            <TextBox x:Name="txtStatus"
+                     Height="480"
+                     Margin="5"
+                     TextWrapping="Wrap"
+                     Foreground="Green"
+                     IsReadOnly="True"
+                     AcceptsReturn="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     TextChanged="TxtStatus_OnTextChanged" />
         </StackPanel>
 
     </DockPanel>
