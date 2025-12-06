@@ -113,7 +113,15 @@ namespace Uploader.Helpers
                 RawMessage = rawMessage
             };
 
-            await sesClient.SendRawEmailAsync(request, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await sesClient.SendRawEmailAsync(request, cancellationToken).ConfigureAwait(false);
+
+            }
+            catch (Exception ex)
+            {
+                string strMessage = ex.Message;
+            }
         }
     }
 }

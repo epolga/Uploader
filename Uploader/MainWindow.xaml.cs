@@ -65,7 +65,8 @@ namespace Uploader
         private string _batchFolderPath = string.Empty;
 
         private const string PhotoPrefix = "photos";
-        private const string UserEmailSubject = "❌🪡❌🪡❌ Your Adorable Cross-Stitch Pattern: \"Kitty Delight\" 🐱🐱🐱🐱🐱";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ New Donkey Cross-Stitch Pattern Just for You! 🐴";
+        private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private int _albumId;
 
         public PatternInfo? PatternInfo { get; private set; }
@@ -1761,28 +1762,138 @@ namespace Uploader
                 : "<p>Hello,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "Hope this message brings a smile to your day! I'm excited to share the cross-stitch pattern featuring our charming little friend, the kitty.\r\n" +
-            "This delightful design showcases a playful orange cat with a cheeky wink and an endearing smile, perfect for bringing joy to your stitching experience.\r\n" +
-            "The vibrant colors and cute expression capture the essence of feline playfulness, making it a wonderful project for cat lovers like you!\r\n\r\n" +
-            "As you embark on this stitching journey, I hope this pattern inspires countless moments of joy and creativity. Let each stitch remind you of the warmth and happiness that pets bring into our lives.\r\n\r\n" +
-            "Happy stitching!\r\n" +
-            "Warmly,\r\n" +
+            "I'm thrilled to share that my latest cross-stitch project featuring an adorable donkey has been uploaded just for you! 🐴✨\r\n" +
+            "Soon, you’ll also have the option to download patterns in black and white.\r\n" +
+            "I’d love to hear your thoughts! How is the website behaving for you? Are there any specific cross-stitch patterns you’d like to see in the future? Your feedback is so important to me and always welcomed!\r\n\r\n" +
+            "Happy stitching! 💖\r\n" +
+            "Best wishes,\r\n" +
             "Ann\r\n\r\n" +
             $"View and download: {viewAndDownloadUrl}\r\n" +
             $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
             $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>Hope this message brings a smile to your day! I'm excited to share the cross-stitch pattern featuring our charming little friend, the kitty.</p>" +
-            "<p>This delightful design showcases a playful orange cat with a cheeky wink and an endearing smile, perfect for bringing joy to your stitching experience.</p>" +
-            "<p>The vibrant colors and cute expression capture the essence of feline playfulness, making it a wonderful project for cat lovers like you!</p>" +
-            "<p>As you embark on this stitching journey, I hope this pattern inspires countless moments of joy and creativity. Let each stitch remind you of the warmth and happiness that pets bring into our lives.</p>" +
-            "<p>Happy stitching!</p>" +
-            "<p>Warmly,<br/>Ann</p>" +
+            "<p>I'm thrilled to share that my latest cross-stitch project featuring an adorable donkey has been uploaded just for you! 🐴✨</p>" +
+            "<p>Soon, you’ll also have the option to download patterns in black and white.</p>" +
+            "<p>I’d love to hear your thoughts! How is the website behaving for you? Are there any specific cross-stitch patterns you’d like to see in the future? Your feedback is so important to me and always welcomed!</p>" +
+            "<p>Happy stitching! 💖</p>" +
+            "<p>Best wishes,<br/>Ann</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
             $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
             $"<p>Join me on Facebook: <a href=\"{facebookLink}\">Ann Cross Stitch</a>. I'd love to connect.</p>";
+
+        private static List<string> ReadSuppressedEmails(string filePath)
+        {
+            var emails = new List<string>();
+
+            if (!File.Exists(filePath))
+            {
+                throw new FileNotFoundException("Suppressed list file not found.", filePath);
+            }
+
+            var lines = File.ReadAllLines(filePath);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                // Every 3rd line starting at index 0 (0,3,6,...). If the source format differs,
+                // adjust the stride logic here.
+                if (i % 3 == 0 && !string.IsNullOrWhiteSpace(lines[i]))
+                {
+                    emails.Add(lines[i].Trim());
+                }
+            }
+
+            return emails;
+        }
+
+        private async Task RemoveSuppressedUsersAsync(List<string> emails)
+        {
+            string tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
+            int deletedCount = 0;
+            int missingCount = 0;
+            int missingNPageCount = 0;
+            int errors = 0;
+            var stopwatch = Stopwatch.StartNew();
+            List<string> lstMissing = new List<string>();
+            for (int index = 0; index < emails.Count; index++)
+            {
+                string email = emails[index];
+                string userId = $"USR#{email}";
+
+                try
+                {
+                    var queryRequest = new QueryRequest
+                    {
+                        TableName = tableName,
+                        KeyConditionExpression = "ID = :id",
+                        ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                        {
+                            { ":id", new AttributeValue { S = userId } }
+                        },
+                        ProjectionExpression = "ID, NPage"
+                    };
+
+                    var queryResponse = await _dynamoDbClient.QueryAsync(queryRequest).ConfigureAwait(false);
+                    if (queryResponse.Items.Count == 0)
+                    {
+                        missingCount++;
+                        lstMissing.Add(userId);
+                        continue;
+                    }
+
+                    foreach (var item in queryResponse.Items)
+                    {
+                        if (!item.TryGetValue("NPage", out var nPageAttr) || string.IsNullOrWhiteSpace(nPageAttr.S))
+                        {
+                            missingNPageCount++;
+                            continue;
+                        }
+
+                        var deleteRequest = new DeleteItemRequest
+                        {
+                            TableName = tableName,
+                            Key = new Dictionary<string, AttributeValue>
+                            {
+                                { "ID", new AttributeValue { S = userId } },
+                                { "NPage", nPageAttr }
+                            }
+                        };
+
+                        await _dynamoDbClient.DeleteItemAsync(deleteRequest).ConfigureAwait(false);
+                        deletedCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors++;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        txtStatus.Text += $"[Suppress] Error for {email}: {ex.Message}\r\n";
+                    }));
+                }
+
+                if ((index + 1) % 50 == 0 || index == emails.Count - 1)
+                {
+                    double avgSeconds = (index + 1) > 0 ? stopwatch.Elapsed.TotalSeconds / (index + 1) : 0;
+                    int remaining = Math.Max(emails.Count - (index + 1), 0);
+                    TimeSpan eta = avgSeconds > 0 ? TimeSpan.FromSeconds(avgSeconds * remaining) : TimeSpan.Zero;
+                    double percentRemaining = emails.Count > 0 ? (remaining * 100.0 / emails.Count) : 0;
+
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        txtStatus.Text +=
+                            $"[Suppress] Processed {index + 1}/{emails.Count} | Deleted {deletedCount}, Missing {missingCount}, Missing NPage {missingNPageCount}, Errors {errors}. Elapsed {stopwatch.Elapsed:hh\\:mm\\:ss}, ETA {eta:hh\\:mm\\:ss}, Remaining {remaining} ({percentRemaining:F1}% left).\r\n";
+                    }));
+                }
+            }
+
+            stopwatch.Stop();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text += $"[Suppress] Done. Deleted {deletedCount}, Missing {missingCount}, Missing NPage {missingNPageCount}, Errors {errors}. Total time {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
+            }));
+        }
 
         #endregion
 
@@ -1987,6 +2098,30 @@ namespace Uploader
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     txtStatus.Text += $"Failed to send admin user-style email: {ex.Message}\r\n";
+                }));
+            }
+        }
+
+        private async void RemoveSuppressedUsers_Click(object sender, RoutedEventArgs e)
+        {
+            txtStatus.Text += "Starting removal of suppressed users...\r\n";
+
+            try
+            {
+                var emails = ReadSuppressedEmails(SuppressedListPath);
+                if (emails.Count == 0)
+                {
+                    txtStatus.Text += "No emails found to remove.\r\n";
+                    return;
+                }
+
+                await RemoveSuppressedUsersAsync(emails).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to remove suppressed users: {ex.Message}\r\n";
                 }));
             }
         }
