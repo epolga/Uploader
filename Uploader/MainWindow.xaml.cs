@@ -1231,6 +1231,8 @@ namespace Uploader
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
 
+                int nSendingLimit = 30;
+                int iSent = 0;
                 do
                 {
                     scanRequest.ExclusiveStartKey = lastEvaluatedKey;
@@ -1296,6 +1298,8 @@ namespace Uploader
                     }
 
                     lastEvaluatedKey = response.LastEvaluatedKey;
+                    if(iSent++ > nSendingLimit) { break; }
+
                 } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
 
                 Dispatcher.BeginInvoke(new Action(() =>
@@ -1314,13 +1318,15 @@ namespace Uploader
             return recipients;
         }
 
-        private async Task<List<UserRecipient>> FetchItemUserEmailsAsync()
+        private async Task<List<UserRecipient>> FetchItemUserEmailsAsync(bool onlyVerified, bool onlySubscribed)
         {
             string tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string firstNameAttribute = ConfigurationManager.AppSettings["UserFirstNameAttribute"] ?? "FirstName";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
             string userCidAttribute = ConfigurationManager.AppSettings["UserCidAttribute"] ?? "cid";
+            string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
+            string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
 
             var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var recipients = new List<UserRecipient>();
