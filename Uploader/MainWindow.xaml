@@ -158,6 +158,11 @@
                         Height="26"
                         Margin="10"
                         Click="RemoveSuppressedUsers_Click" />
+                <Button Content="Mark Users Verified"
+                        Width="190"
+                        Height="26"
+                        Margin="10"
+                        Click="MarkUsersVerified_Click" />
 
                 <Button Content="Initialize User Unsubscribe"
                         Width="190"

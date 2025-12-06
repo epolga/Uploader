@@ -108,6 +108,19 @@ namespace Uploader
 
             try
             {
+                var requiredPdfs = new[] { "1.pdf", "3.pdf", "5.pdf" };
+                var missing = requiredPdfs
+                    .Where(name => !File.Exists(Path.Combine(_batchFolderPath, name)))
+                    .ToList();
+                if (missing.Count > 0)
+                {
+                    string missingList = string.Join(", ", missing);
+                    txtStatus.Text = $"Missing required PDFs: {missingList}\r\n";
+                    MessageBox.Show($"Missing required PDFs: {missingList}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
                 PatternInfo = await CreatePatternInfoAsync();
 
                 // Back on UI thread after await (no ConfigureAwait(false) here),
@@ -378,7 +391,7 @@ namespace Uploader
 
             if (rebooted)
             {
-                var userRecipients = await FetchAllUserEmailsAsync().ConfigureAwait(false);
+                var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
                 await SendNotificationMailToUsersAsync(
                         PatternInfo.DesignID,
                         PatternInfo.PinID,
@@ -504,23 +517,38 @@ namespace Uploader
 
         private async Task UploadPdfToS3Async(int designId)
         {
-            string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
-            if (!File.Exists(pdfPath))
+            string pdf1Path = Path.Combine(_batchFolderPath, "1.pdf");
+            string pdf3Path = Path.Combine(_batchFolderPath, "3.pdf");
+            string pdf5Path = Path.Combine(_batchFolderPath, "5.pdf");
+
+            if (!File.Exists(pdf1Path) || !File.Exists(pdf3Path) || !File.Exists(pdf5Path))
             {
-                throw new Exception("1.pdf not found.");
+                throw new Exception("Required PDFs (1.pdf, 3.pdf, 5.pdf) not found.");
             }
 
-            string key = $"pdfs/{_albumId}/Stitch{designId}_Kit.pdf";
+            string mainKey = $"pdfs/{_albumId}/Stitch{designId}_Kit.pdf";
+            string designFolder = $"{_albumId}/{designId}";
+            string key1 = $"{designFolder}/Stitch{designId}_1_Kit.pdf";
+            string key3 = $"{designFolder}/Stitch{designId}_3_Kit.pdf";
+            string key5 = $"{designFolder}/Stitch{designId}_5_Kit.pdf";
 
+            await UploadPdfFileAsync(pdf1Path, mainKey).ConfigureAwait(false);
+            await UploadPdfFileAsync(pdf1Path, key1).ConfigureAwait(false);
+            await UploadPdfFileAsync(pdf3Path, key3).ConfigureAwait(false);
+            await UploadPdfFileAsync(pdf5Path, key5).ConfigureAwait(false);
+        }
+
+        private Task UploadPdfFileAsync(string filePath, string key)
+        {
             var request = new TransferUtilityUploadRequest
             {
-                FilePath = pdfPath,
+                FilePath = filePath,
                 BucketName = _bucketName,
                 Key = key,
                 ContentType = "application/pdf"
             };
 
-            await _s3TransferUtility.UploadAsync(request).ConfigureAwait(false);
+            return _s3TransferUtility.UploadAsync(request);
         }
 
         private async Task UploadImageToS3Async(int designId)
@@ -1167,23 +1195,38 @@ namespace Uploader
             public string? Cid { get; }
         }
 
-        private async Task<List<UserRecipient>> FetchAllUserEmailsAsync()
+        private async Task<List<UserRecipient>> FetchAllUserEmailsAsync(bool onlyVerified = false, bool onlySubscribed = false)
         {
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string firstNameAttribute = ConfigurationManager.AppSettings["UserFirstNameAttribute"] ?? "FirstName";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
             string userCidAttribute = ConfigurationManager.AppSettings["UserCidAttribute"] ?? "cid";
+            string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
+            string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
 
             var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var recipients = new List<UserRecipient>();
 
             try
             {
+                var projectionParts = new List<string>
+                {
+                    emailAttribute,
+                    firstNameAttribute,
+                    userIdAttribute,
+                    userCidAttribute
+                };
+
+                if (onlyVerified)
+                    projectionParts.Add(verifiedAttribute);
+                if (onlySubscribed)
+                    projectionParts.Add(unsubscribedAttribute);
+
                 var scanRequest = new ScanRequest
                 {
                     TableName = usersTable,
-                    ProjectionExpression = $"{emailAttribute}, {firstNameAttribute}, {userIdAttribute}, {userCidAttribute}"
+                    ProjectionExpression = string.Join(", ", projectionParts.Distinct())
                 };
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
@@ -1358,6 +1401,22 @@ namespace Uploader
                             cid = cidAttr.S.Trim();
                         }
 
+                        if (onlyVerified)
+                        {
+                            bool isVerified = item.TryGetValue(verifiedAttribute, out var verifiedAttr) &&
+                                              verifiedAttr.BOOL;
+                            if (!isVerified)
+                                continue;
+                        }
+
+                        if (onlySubscribed)
+                        {
+                            bool unsubscribed = item.TryGetValue(unsubscribedAttribute, out var unsubAttr) &&
+                                                unsubAttr.BOOL;
+                            if (unsubscribed)
+                                continue;
+                        }
+
                         recipients.Add(new UserRecipient(email, firstName, idAttr, cid));
                     }
 
@@ -1436,9 +1495,10 @@ namespace Uploader
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
-            string itemsTable = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
+            string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
+            string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
             string facebookUrl = "https://www.facebook.com/AnnCrossStitch/";
 
             if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
@@ -1486,7 +1546,15 @@ namespace Uploader
                     .ToList();
             }
 
-            int totalUserCount = await CountUsersAsync(usersTable).ConfigureAwait(false);
+            int totalUserCount = await CountUsersAsync(
+                    usersTable,
+                    $"{verifiedAttribute} = :trueVal AND (attribute_not_exists({unsubscribedAttribute}) OR {unsubscribedAttribute} = :falseVal)",
+                    new Dictionary<string, AttributeValue>
+                    {
+                        { ":trueVal", new AttributeValue { BOOL = true } },
+                        { ":falseVal", new AttributeValue { BOOL = false } }
+                    })
+                .ConfigureAwait(false);
             await SendEmailsWithProgressAsync(
                 "[CrossStitchUsers]",
                 recipients,
@@ -1505,42 +1573,9 @@ namespace Uploader
                 emailAttribute,
                 userIdAttribute).ConfigureAwait(false);
 
-            // Send to users stored in CrossStitchItems (IDs start with USR#).
-            var itemRecipients = await FetchItemUserEmailsAsync().ConfigureAwait(false);
-            if (!string.IsNullOrEmpty(admin))
-            {
-                itemRecipients = itemRecipients
-                    .Where(r => !string.Equals(r.Email, admin, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-            }
-
-            int totalItemUserCount = await CountUsersAsync(
-                    itemsTable,
-                    "begins_with(ID, :userPrefix)",
-                    new Dictionary<string, AttributeValue> { { ":userPrefix", new AttributeValue { S = "USR#" } } })
-                .ConfigureAwait(false);
-
-            await SendEmailsWithProgressAsync(
-                "[CrossStitchItems]",
-                itemRecipients,
-                subject,
-                sender,
-                patternUrl,
-                siteUrl,
-                imageUrl,
-                facebookUrl,
-                altText,
-                albumSuggestions,
-                eid,
-                totalItemUserCount,
-                false,
-                itemsTable,
-                emailAttribute,
-                userIdAttribute).ConfigureAwait(false);
-
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                txtStatus.Text += $"Sent notification email to {recipients.Count} CrossStitchUsers and {itemRecipients.Count} CrossStitchItems users.\r\n";
+                txtStatus.Text += $"Sent notification email to {recipients.Count} verified, subscribed users from CrossStitchUsers.\r\n";
             }));
         }
 
@@ -1895,6 +1930,126 @@ namespace Uploader
             }));
         }
 
+        private async Task MarkUsersVerifiedAsync()
+        {
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+            const string verifiedField = "Verified";
+            const string verifiedAtField = "VerifiedAt";
+            const string createdAtField = "CreatedAt";
+
+            int updatedCount = 0;
+            int skippedCount = 0;
+            int missingCreatedAtCount = 0;
+            int errors = 0;
+            int scannedCount = 0;
+            int totalCount = await CountUsersAsync(usersTable).ConfigureAwait(false);
+            var stopwatch = Stopwatch.StartNew();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text += $"{usersTable}: total users {totalCount}.\r\n";
+            }));
+
+            var scanRequest = new ScanRequest
+            {
+                TableName = usersTable,
+                ProjectionExpression = $"ID, {createdAtField}, {verifiedField}, {verifiedAtField}, NPage"
+            };
+
+            Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+            do
+            {
+                scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                foreach (var item in response.Items)
+                {
+                    scannedCount++;
+
+                    if (!item.TryGetValue("ID", out var idAttr))
+                        continue;
+  
+                    bool alreadyVerified = item.TryGetValue(verifiedField, out var verifiedAttr) && verifiedAttr.BOOL;
+                    bool hasVerifiedAt = item.TryGetValue(verifiedAtField, out var verifiedAtAttr) && !string.IsNullOrWhiteSpace(verifiedAtAttr.S);
+
+                    if (alreadyVerified && hasVerifiedAt)
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    if (!item.TryGetValue(createdAtField, out var createdAtAttr) || string.IsNullOrWhiteSpace(createdAtAttr.S))
+                    {
+                        missingCreatedAtCount++;
+                        continue;
+                    }
+
+                    var updateRequest = new UpdateItemRequest
+                    {
+                        TableName = usersTable,
+                        Key = new Dictionary<string, AttributeValue>
+                        {
+                            { "ID", idAttr }
+                        },
+                        UpdateExpression = $"SET {verifiedField} = :trueVal, {verifiedAtField} = :createdAt",
+                        ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                        {
+                            { ":trueVal", new AttributeValue { BOOL = true } },
+                            { ":createdAt", new AttributeValue { S = createdAtAttr.S } }
+                        }
+                    };
+
+                    try
+                    {
+                        await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
+                        updatedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        errors++;
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            txtStatus.Text += $"[Verify] Failed to update {idAttr.S}: {ex.Message}\r\n";
+                        }));
+                    }
+
+                    if ((updatedCount + skippedCount + missingCreatedAtCount) % 50 == 0)
+                    {
+                        int remaining = totalCount > 0
+                            ? Math.Max(totalCount - (updatedCount + skippedCount + missingCreatedAtCount), 0)
+                            : -1;
+                        double avgSeconds = scannedCount > 0 ? stopwatch.Elapsed.TotalSeconds / scannedCount : 0;
+                        TimeSpan eta = avgSeconds > 0 && remaining >= 0
+                            ? TimeSpan.FromSeconds(avgSeconds * remaining)
+                            : TimeSpan.Zero;
+                        double percentRemaining = totalCount > 0
+                            ? (remaining * 100.0 / totalCount)
+                            : 0;
+
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            string remainingText = remaining >= 0
+                                ? $"{remaining} remaining ({percentRemaining:F1}% left)"
+                                : "remaining: unknown";
+                            txtStatus.Text +=
+                                $"[Verify] Scanned {scannedCount}, updated {updatedCount}, skipped {skippedCount}, missing CreatedAt {missingCreatedAtCount}, errors {errors}. Elapsed {stopwatch.Elapsed:hh\\:mm\\:ss}, ETA {eta:hh\\:mm\\:ss}, {remainingText}.\r\n";
+                        }));
+                    }
+                }
+
+                lastEvaluatedKey = response.LastEvaluatedKey;
+            } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+            stopwatch.Stop();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text +=
+                    $"[Verify] Done. Updated {updatedCount}, skipped {skippedCount}, missing CreatedAt {missingCreatedAtCount}, errors {errors}. Total time {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
+            }));
+        }
+
         #endregion
 
         #region PDF image extraction (UI only at the end)
@@ -2122,6 +2277,23 @@ namespace Uploader
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     txtStatus.Text += $"Failed to remove suppressed users: {ex.Message}\r\n";
+                }));
+            }
+        }
+
+        private async void MarkUsersVerified_Click(object sender, RoutedEventArgs e)
+        {
+            txtStatus.Text += "Starting to mark users as verified...\r\n";
+
+            try
+            {
+                await MarkUsersVerifiedAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to mark users verified: {ex.Message}\r\n";
                 }));
             }
         }
