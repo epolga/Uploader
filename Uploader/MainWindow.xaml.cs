@@ -65,7 +65,7 @@ namespace Uploader
         private string _batchFolderPath = string.Empty;
 
         private const string PhotoPrefix = "photos";
-        private const string UserEmailSubject = "❌🪡❌🪡❌ New Donkey Cross-Stitch Pattern Just for You! 🐴";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ Time for Tea? You Need to See My New Cross-Stitch Design! ☕🍰";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private int _albumId;
 
@@ -1231,7 +1231,7 @@ namespace Uploader
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
 
-                int nSendingLimit = 30;
+                int nSendingLimit = 70;
                 int iSent = 0;
                 do
                 {
@@ -1298,7 +1298,7 @@ namespace Uploader
                     }
 
                     lastEvaluatedKey = response.LastEvaluatedKey;
-                    if(iSent++ > nSendingLimit) { break; }
+                    if (iSent++ > nSendingLimit) { break; }
 
                 } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
 
@@ -1803,22 +1803,19 @@ namespace Uploader
                 : "<p>Hello,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "I'm thrilled to share that my latest cross-stitch project featuring an adorable donkey has been uploaded just for you! 🐴✨\r\n" +
-            "Soon, you’ll also have the option to download patterns in black and white.\r\n" +
-            "I’d love to hear your thoughts! How is the website behaving for you? Are there any specific cross-stitch patterns you’d like to see in the future? Your feedback is so important to me and always welcomed!\r\n\r\n" +
-            "Happy stitching! 💖\r\n" +
-            "Best wishes,\r\n" +
-            "Ann\r\n\r\n" +
+            "Ready for your next charming project? I am thrilled to announce the arrival of my newest pattern: the Stacked Teacups Cross-Stitch!\r\n\r\n" +
+            "This delightful design features three teacups overflowing with color and cheer, complete with cheerful daisies, a warm rose, and a sunny sunflower. It's an instant favorite for kitchen decor or a beautiful handmade gift.\r\n\r\n" +
+            "Download the pattern and start stitching this colorful stack today!\r\n\r\n" +
+            "Happy Stitching!\r\n\r\nsAnn\r\n\r\n" +
             $"View and download: {viewAndDownloadUrl}\r\n" +
             $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
             $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>I'm thrilled to share that my latest cross-stitch project featuring an adorable donkey has been uploaded just for you! 🐴✨</p>" +
-            "<p>Soon, you’ll also have the option to download patterns in black and white.</p>" +
-            "<p>I’d love to hear your thoughts! How is the website behaving for you? Are there any specific cross-stitch patterns you’d like to see in the future? Your feedback is so important to me and always welcomed!</p>" +
-            "<p>Happy stitching! 💖</p>" +
-            "<p>Best wishes,<br/>Ann</p>" +
+            "<p>Ready for your next charming project? I am thrilled to announce the arrival of my newest pattern: the Stacked Teacups Cross-Stitch!</p>" +
+            "<p>This delightful design features three teacups overflowing with color and cheer, complete with cheerful daisies, a warm rose, and a sunny sunflower. It's an instant favorite for kitchen decor or a beautiful handmade gift.</p>" +
+            "<p>Download the pattern and start stitching this colorful stack today!</p>" +
+            "<p>Happy Stitching!<br/> Ann</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
             $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
@@ -1975,7 +1972,7 @@ namespace Uploader
 
                     if (!item.TryGetValue("ID", out var idAttr))
                         continue;
-  
+
                     bool alreadyVerified = item.TryGetValue(verifiedField, out var verifiedAttr) && verifiedAttr.BOOL;
                     bool hasVerifiedAt = item.TryGetValue(verifiedAtField, out var verifiedAtAttr) && !string.IsNullOrWhiteSpace(verifiedAtAttr.S);
 
@@ -2307,4 +2304,7 @@ namespace Uploader
         #endregion
     }
 }
+
+
+
 
