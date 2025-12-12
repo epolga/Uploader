@@ -67,6 +67,7 @@ namespace Uploader
         private const string PhotoPrefix = "photos";
         private const string UserEmailSubject = "❌🪡❌🪡❌ Time for Tea? You Need to See My New Cross-Stitch Design! ☕🍰";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
+        private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
         private int _albumId;
 
         public PatternInfo? PatternInfo { get; private set; }
@@ -220,7 +221,7 @@ namespace Uploader
             txtStatus.Text = "Renaming Pinterest boards from CSV...\r\n";
 
             var renamer = new PinterestBoardRenamer();
-            var progress = new Progress<string>(msg =>
+            IProgress<string> progress = new Progress<string>(msg =>
             {
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -274,6 +275,43 @@ namespace Uploader
                 txtStatus.Text += $"Error: {ex.Message}\r\n";
                 MessageBox.Show(ex.ToString(), "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void CheckMissingPdfs_Click(object sender, RoutedEventArgs e)
+        {
+            txtStatus.Text += "Checking S3 for missing PDFs...\r\n";
+
+            IProgress<string> progress = new Progress<string>(msg =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += msg + Environment.NewLine;
+                }));
+            });
+
+            try
+            {
+                var designs = await LoadAllDesignLocationsAsync(progress).ConfigureAwait(false);
+                progress.Report($"Fetched {designs.Count} designs from DynamoDB.");
+
+                var pdfKeys = await LoadAllPdfKeysAsync(progress).ConfigureAwait(false);
+
+                var missing = FindDesignsWithMissingPdfs(designs, pdfKeys);
+                string reportPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MissingDesignPdfs.txt");
+                await WriteMissingPdfReportAsync(reportPath, missing).ConfigureAwait(false);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Missing PDFs for {missing.Count} design(s). Report written to: {reportPath}\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"Failed to check PDFs: {ex.Message}\r\n";
+                }));
             }
         }
 
@@ -2158,6 +2196,148 @@ namespace Uploader
 
         #endregion
 
+        #region Missing PDFs audit
+
+        private async Task<List<DesignLocation>> LoadAllDesignLocationsAsync(
+            IProgress<string>? progress,
+            CancellationToken cancellationToken = default)
+        {
+            var designs = new List<DesignLocation>();
+            string tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
+
+            var scanRequest = new ScanRequest
+            {
+                TableName = tableName,
+                FilterExpression = "EntityType = :designType",
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                {
+                    { ":designType", new AttributeValue { S = "DESIGN" } }
+                },
+                ProjectionExpression = "AlbumID, DesignID, EntityType"
+            };
+
+            Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+            do
+            {
+                scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                var response = await _dynamoDbClient.ScanAsync(scanRequest, cancellationToken).ConfigureAwait(false);
+                lastEvaluatedKey = response.LastEvaluatedKey;
+
+                foreach (var item in response.Items)
+                {
+                    if (!item.TryGetValue("AlbumID", out var albumAttr) ||
+                        !item.TryGetValue("DesignID", out var designAttr))
+                    {
+                        continue;
+                    }
+
+                    if (!int.TryParse(albumAttr.N ?? albumAttr.S, out int albumId) ||
+                        !int.TryParse(designAttr.N ?? designAttr.S, out int designId))
+                    {
+                        continue;
+                    }
+
+                    designs.Add(new DesignLocation(albumId, designId));
+                }
+
+                if (designs.Count > 0 && designs.Count % 200 == 0)
+                {
+                    progress?.Report($"Loaded {designs.Count} designs so far...");
+                }
+            } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+            progress?.Report($"Loaded {designs.Count} designs in total.");
+            return designs;
+        }
+
+        private async Task<HashSet<string>> LoadAllPdfKeysAsync(
+            IProgress<string>? progress,
+            CancellationToken cancellationToken = default)
+        {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var listRequest = new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                Prefix = "pdfs/"
+            };
+
+            int count = 0;
+            var paginator = _s3Client.Paginators.ListObjectsV2(listRequest);
+
+            await foreach (var obj in paginator.S3Objects.WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                keys.Add(obj.Key);
+                count++;
+
+                if (count % 500 == 0)
+                {
+                    progress?.Report($"Indexed {count} PDF objects so far...");
+                }
+            }
+
+            progress?.Report($"Indexed {count} PDF objects.");
+            return keys;
+        }
+
+        private static List<MissingPdfInfo> FindDesignsWithMissingPdfs(
+            IEnumerable<DesignLocation> designs,
+            IReadOnlySet<string> existingPdfKeys)
+        {
+            var missing = new List<MissingPdfInfo>();
+
+            foreach (var design in designs)
+            {
+                var expectedKeys = BuildExpectedPdfKeys(design);
+                var missingKeys = expectedKeys
+                    .Where(key => !existingPdfKeys.Contains(key))
+                    .ToList();
+
+                if (missingKeys.Count > 0)
+                {
+                    if (design.DesignId == 5366) 
+                    { 
+                    }
+                    missing.Add(new MissingPdfInfo(design.DesignId, design.AlbumId, missingKeys));
+                }
+            }
+
+            return missing;
+        }
+
+        private static List<string> BuildExpectedPdfKeys(DesignLocation design)
+        {
+            var keys = new List<string>(RequiredPdfVariants.Length + 1);
+            string albumPart = design.AlbumId.ToString();
+            string designPart = design.DesignId.ToString();
+
+            foreach (string variant in RequiredPdfVariants)
+            {
+                keys.Add($"pdfs/{albumPart}/{designPart}/Stitch{designPart}_{variant}_Kit.pdf");
+            }
+
+            keys.Add($"pdfs/{albumPart}/Stitch{designPart}_Kit.pdf");
+            return keys;
+        }
+
+        private static async Task WriteMissingPdfReportAsync(string reportPath, List<MissingPdfInfo> missingDesigns)
+        {
+            var lines = missingDesigns.Count == 0
+                ? new[] { "All required PDFs are present." }
+                : missingDesigns
+                    .OrderBy(m => m.DesignId)
+                    .Select(m => $"{m.DesignId},{m.AlbumId}");
+
+            await File.WriteAllLinesAsync(reportPath, lines).ConfigureAwait(false);
+        }
+
+        private sealed record DesignLocation(int AlbumId, int DesignId);
+
+        private sealed record MissingPdfInfo(int DesignId, int AlbumId, List<string> MissingKeys);
+
+        #endregion
+
         #region Optional: build DesignToAlbumMap CSV from S3
 
         private static async Task CreateDesignToAlbumMapAsync(
@@ -2304,7 +2484,3 @@ namespace Uploader
         #endregion
     }
 }
-
-
-
-

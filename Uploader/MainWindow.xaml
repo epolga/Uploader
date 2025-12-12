@@ -164,6 +164,12 @@
                         Margin="10"
                         Click="MarkUsersVerified_Click" />
 
+                <Button Content="Check Missing PDFs"
+                        Width="190"
+                        Height="26"
+                        Margin="10"
+                        Click="CheckMissingPdfs_Click" />
+
                 <Button Content="Initialize User Unsubscribe"
                         Width="190"
                         Height="26"
