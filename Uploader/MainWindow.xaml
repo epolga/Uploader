@@ -180,57 +180,57 @@
                            Grid.Row="0"
                            Grid.Column="0"
                            VerticalAlignment="Center" />
-                <TextBox x:Name="txtTitle"
-                         Grid.Row="0"
-                         Grid.Column="1"
-                         Margin="0,3"
-                         HorizontalAlignment="Stretch" />
+                <TextBlock x:Name="txtTitle"
+                           Grid.Row="0"
+                           Grid.Column="1"
+                           Margin="0,3"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
 
                 <TextBlock Text="Width:"
                            Grid.Row="1"
                            Grid.Column="0"
                            VerticalAlignment="Center" />
-                <TextBox x:Name="txtWidth"
-                         Grid.Row="1"
-                         Grid.Column="1"
-                         Margin="0,3"
-                         Width="60" />
+                <TextBlock x:Name="txtWidth"
+                           Grid.Row="1"
+                           Grid.Column="1"
+                           Margin="0,3"
+                           VerticalAlignment="Center" />
 
                 <TextBlock Text="Height:"
                            Grid.Row="2"
                            Grid.Column="0"
                            VerticalAlignment="Center" />
-                <TextBox x:Name="txtHeight"
-                         Grid.Row="2"
-                         Grid.Column="1"
-                         Margin="0,3"
-                         Width="60" />
+                <TextBlock x:Name="txtHeight"
+                           Grid.Row="2"
+                           Grid.Column="1"
+                           Margin="0,3"
+                           VerticalAlignment="Center" />
 
                 <TextBlock Text="Colors:"
                            Grid.Row="3"
                            Grid.Column="0"
                            VerticalAlignment="Center" />
-                <TextBox x:Name="txtNColors"
-                         Grid.Row="3"
-                         Grid.Column="1"
-                         Margin="0,3"
-                         Width="60" />
+                <TextBlock x:Name="txtNColors"
+                           Grid.Row="3"
+                           Grid.Column="1"
+                           Margin="0,3"
+                           VerticalAlignment="Center" />
 
                 <TextBlock Text="Notes:"
                            Grid.Row="4"
                            Grid.Column="0"
                            VerticalAlignment="Top" />
-                <TextBox x:Name="txtNotes"
-                         Grid.Row="4"
-                         Grid.Column="1"
-                         Margin="0,3"
-                         Height="83"
-                         AcceptsReturn="True"
-                         TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Disabled"
-                         HorizontalScrollBarVisibility="Disabled"
-                         HorizontalAlignment="Stretch"
-                         VerticalAlignment="Stretch" />
+                <Border Grid.Row="4"
+                        Grid.Column="1"
+                        Margin="0,3"
+                        BorderBrush="#CCC"
+                        BorderThickness="1"
+                        Padding="6"
+                        MinHeight="140">
+                    <TextBlock x:Name="txtNotes"
+                               TextWrapping="Wrap" />
+                </Border>
             </Grid>
         </Grid>
 
