@@ -45,20 +45,6 @@
         <StackPanel DockPanel.Dock="Bottom"
                     Orientation="Vertical">
 
-            <WrapPanel HorizontalAlignment="Left">
-                <Button Content="Upload"
-                        Width="80"
-                        Height="26"
-                        Margin="10"
-                        Click="BtnUpload_Click" />
-                <Button Content="Send Emails"
-                        Width="110"
-                        Height="26"
-                        Margin="10"
-                        Click="BtnSendEmails_Click" />
-
-            </WrapPanel>
-
             <Expander Header="More actions"
                       Margin="10,0,10,5">
                 <WrapPanel HorizontalAlignment="Left">
@@ -138,16 +124,38 @@
                 <ColumnDefinition Width="3*" />
             </Grid.ColumnDefinitions>
 
-            <!-- LEFT: Preview image -->
-            <Border Grid.Column="0"
-                    Margin="5"
-                    Padding="5"
-                    BorderBrush="#CCC"
-                    BorderThickness="1"
-                    CornerRadius="5">
-                <Image x:Name="imgBatch"
-                       Stretch="Uniform" />
-            </Border>
+            <!-- LEFT: Preview image + primary actions -->
+            <Grid Grid.Column="0"
+                  Margin="5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Margin="0,0,0,8"
+                        Padding="5"
+                        BorderBrush="#CCC"
+                        BorderThickness="1"
+                        CornerRadius="5">
+                    <Image x:Name="imgBatch"
+                           Stretch="Uniform" />
+                </Border>
+
+                <WrapPanel Grid.Row="1"
+                           HorizontalAlignment="Left"
+                           Margin="0,0,0,0">
+                    <Button Content="Upload"
+                            Width="80"
+                            Height="26"
+                            Margin="0,0,10,0"
+                            Click="BtnUpload_Click" />
+                    <Button Content="Send Emails"
+                            Width="110"
+                            Height="26"
+                            Click="BtnSendEmails_Click" />
+                </WrapPanel>
+            </Grid>
 
             <!-- Spacer -->
             <Grid Grid.Column="1" />
