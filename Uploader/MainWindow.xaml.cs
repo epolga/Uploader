@@ -65,7 +65,7 @@ namespace Uploader
         private string _batchFolderPath = string.Empty;
 
         private const string PhotoPrefix = "photos";
-        private const string UserEmailSubject = "❌🪡❌🪡❌ Time for Tea? You Need to See My New Cross-Stitch Design! ☕🍰";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ King of the Jungle Alert! My New Lion Pattern is Here!🦁";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
         private int _albumId;
@@ -565,7 +565,7 @@ namespace Uploader
             }
 
             string mainKey = $"pdfs/{_albumId}/Stitch{designId}_Kit.pdf";
-            string designFolder = $"{_albumId}/{designId}";
+            string designFolder = $"pdfs/{_albumId}/{designId}";
             string key1 = $"{designFolder}/Stitch{designId}_1_Kit.pdf";
             string key3 = $"{designFolder}/Stitch{designId}_3_Kit.pdf";
             string key5 = $"{designFolder}/Stitch{designId}_5_Kit.pdf";
@@ -1269,7 +1269,7 @@ namespace Uploader
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
 
-                int nSendingLimit = 70;
+                int nSendingLimit = 110;
                 int iSent = 0;
                 do
                 {
@@ -1832,28 +1832,26 @@ namespace Uploader
 
         private static string BuildUserGreetingText(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
-                ? $"Dear {firstName},\r\n"
-                : "Hello,\r\n";
+                ? $"Hello {firstName},\r\n\r\n"
+                : "Hello,\r\n\r\n";
 
         private static string BuildUserGreetingHtml(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
-                ? $"<p>Dear {WebUtility.HtmlEncode(firstName)},</p>"
+                ? $"<p>Hello {WebUtility.HtmlEncode(firstName)},</p>"
                 : "<p>Hello,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "Ready for your next charming project? I am thrilled to announce the arrival of my newest pattern: the Stacked Teacups Cross-Stitch!\r\n\r\n" +
-            "This delightful design features three teacups overflowing with color and cheer, complete with cheerful daisies, a warm rose, and a sunny sunflower. It's an instant favorite for kitchen decor or a beautiful handmade gift.\r\n\r\n" +
-            "Download the pattern and start stitching this colorful stack today!\r\n\r\n" +
-            "Happy Stitching!\r\n\r\nsAnn\r\n\r\n" +
+            "Roar! I'm so excited to announce the release of my newest cross-stitch pattern: the Happy Lion Design!\r\n\r\n" +
+            "This cheerful, cartoon-style king of the jungle is ready to bring a smile to any nursery, child's room, or project bag. He's designed to be a fun, vibrant stitch for all skill levels.\r\n\r\n" +
+            "Download the pattern and bring this friendly lion to life today!\r\n\r\n" +
             $"View and download: {viewAndDownloadUrl}\r\n" +
             $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
             $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>Ready for your next charming project? I am thrilled to announce the arrival of my newest pattern: the Stacked Teacups Cross-Stitch!</p>" +
-            "<p>This delightful design features three teacups overflowing with color and cheer, complete with cheerful daisies, a warm rose, and a sunny sunflower. It's an instant favorite for kitchen decor or a beautiful handmade gift.</p>" +
-            "<p>Download the pattern and start stitching this colorful stack today!</p>" +
-            "<p>Happy Stitching!<br/> Ann</p>" +
+            "<p>Roar! I'm so excited to announce the release of my newest cross-stitch pattern: the Happy Lion Design!</p>" +
+            "<p>This cheerful, cartoon-style king of the jungle is ready to bring a smile to any nursery, child's room, or project bag. He's designed to be a fun, vibrant stitch for all skill levels.</p>" +
+            "<p>Download the pattern and bring this friendly lion to life today!</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
             $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
