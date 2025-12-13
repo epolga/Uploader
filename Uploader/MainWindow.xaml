@@ -221,16 +221,12 @@
                            Grid.Row="4"
                            Grid.Column="0"
                            VerticalAlignment="Top" />
-                <Border Grid.Row="4"
-                        Grid.Column="1"
-                        Margin="0,3"
-                        BorderBrush="#CCC"
-                        BorderThickness="1"
-                        Padding="6"
-                        MinHeight="140">
-                    <TextBlock x:Name="txtNotes"
-                               TextWrapping="Wrap" />
-                </Border>
+                <TextBlock x:Name="txtNotes"
+                           Grid.Row="4"
+                           Grid.Column="1"
+                           Margin="0,3"
+                           MinHeight="84"
+                           TextWrapping="Wrap" />
             </Grid>
         </Grid>
 
