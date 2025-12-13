@@ -65,7 +65,7 @@ namespace Uploader
         private string _batchFolderPath = string.Empty;
 
         private const string PhotoPrefix = "photos";
-        private const string UserEmailSubject = "❌🪡❌🪡❌ King of the Jungle Alert! My New Lion Pattern is Here!🦁";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ Fluttering with Excitement! My New Rainbow Butterfly Pattern is Here!🦋";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
         private int _albumId;
