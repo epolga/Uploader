@@ -153,50 +153,75 @@
             <Grid Grid.Column="1" />
 
             <!-- RIGHT: Pattern fields -->
-            <StackPanel Grid.Column="2"
-                        Margin="5">
+            <Grid Grid.Column="2"
+                  Margin="5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal"
-                            Margin="0,3">
-                    <TextBlock Text="Title:"
-                               Width="80" />
-                    <TextBox x:Name="txtTitle"
-                             Width="250" />
-                </StackPanel>
+                <TextBlock Text="Title:"
+                           Grid.Row="0"
+                           Grid.Column="0"
+                           VerticalAlignment="Center" />
+                <TextBox x:Name="txtTitle"
+                         Grid.Row="0"
+                         Grid.Column="1"
+                         Margin="0,3"
+                         HorizontalAlignment="Stretch" />
 
-                <StackPanel Orientation="Horizontal"
-                            Margin="0,3">
-                    <TextBlock Text="Notes:"
-                               Width="80" />
-                    <TextBox x:Name="txtNotes"
-                             Width="250" />
-                </StackPanel>
+                <TextBlock Text="Width:"
+                           Grid.Row="1"
+                           Grid.Column="0"
+                           VerticalAlignment="Center" />
+                <TextBox x:Name="txtWidth"
+                         Grid.Row="1"
+                         Grid.Column="1"
+                         Margin="0,3"
+                         Width="60" />
 
-                <StackPanel Orientation="Horizontal"
-                            Margin="0,3">
-                    <TextBlock Text="Width:"
-                               Width="80" />
-                    <TextBox x:Name="txtWidth"
-                             Width="60" />
-                </StackPanel>
+                <TextBlock Text="Height:"
+                           Grid.Row="2"
+                           Grid.Column="0"
+                           VerticalAlignment="Center" />
+                <TextBox x:Name="txtHeight"
+                         Grid.Row="2"
+                         Grid.Column="1"
+                         Margin="0,3"
+                         Width="60" />
 
-                <StackPanel Orientation="Horizontal"
-                            Margin="0,3">
-                    <TextBlock Text="Height:"
-                               Width="80" />
-                    <TextBox x:Name="txtHeight"
-                             Width="60" />
-                </StackPanel>
+                <TextBlock Text="Colors:"
+                           Grid.Row="3"
+                           Grid.Column="0"
+                           VerticalAlignment="Center" />
+                <TextBox x:Name="txtNColors"
+                         Grid.Row="3"
+                         Grid.Column="1"
+                         Margin="0,3"
+                         Width="60" />
 
-                <StackPanel Orientation="Horizontal"
-                            Margin="0,3">
-                    <TextBlock Text="Colors:"
-                               Width="80" />
-                    <TextBox x:Name="txtNColors"
-                             Width="60" />
-                </StackPanel>
-
-            </StackPanel>
+                <TextBlock Text="Notes:"
+                           Grid.Row="4"
+                           Grid.Column="0"
+                           VerticalAlignment="Top" />
+                <TextBox x:Name="txtNotes"
+                         Grid.Row="4"
+                         Grid.Column="1"
+                         Margin="0,3"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"
+                         HorizontalAlignment="Stretch"
+                         VerticalAlignment="Stretch" />
+            </Grid>
         </Grid>
 
     </DockPanel>
