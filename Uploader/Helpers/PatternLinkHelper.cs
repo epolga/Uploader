@@ -18,10 +18,7 @@ namespace Uploader.Helpers
 
         public PatternLinkHelper()
         {
-            _siteBaseUrl =
-                ConfigurationManager.AppSettings["SiteBaseUrl"] ??
-                ConfigurationManager.AppSettings["PinterestLinkUrl"] ??
-                "https://www.cross-stitch-pattern.net";
+            _siteBaseUrl = GetSiteBaseUrlFromConfig();
 
             var configuredImageBase =
                 ConfigurationManager.AppSettings["S3PublicBaseUrl"];
@@ -44,13 +41,31 @@ namespace Uploader.Helpers
                 "photos";
         }
 
+        public string SiteBaseUrl => _siteBaseUrl;
+
+        private static string GetSiteBaseUrlFromConfig()
+        {
+            string siteBaseUrl =
+                ConfigurationManager.AppSettings["SiteBaseUrl"] ??
+                ConfigurationManager.AppSettings["PinterestLinkUrl"] ??
+                string.Empty;
+
+            if (string.IsNullOrWhiteSpace(siteBaseUrl))
+            {
+                throw new ConfigurationErrorsException(
+                    "SiteBaseUrl must be configured in appSettings.");
+            }
+
+            return siteBaseUrl.TrimEnd('/');
+        }
+
         public string BuildPatternUrl(PatternInfo patternInfo)
         {
             if (patternInfo == null) throw new ArgumentNullException(nameof(patternInfo));
 
             string caption = (patternInfo.Title ?? "Cross-stitch-pattern").Replace(' ', '-');
             int.TryParse(patternInfo.NPage, out int nPage);
-            string baseUrl = _siteBaseUrl.TrimEnd('/');
+            string baseUrl = _siteBaseUrl;
 
             return $"{baseUrl}/{caption}-{patternInfo.AlbumId}-{nPage-1}-Free-Design.aspx";
         }
@@ -66,7 +81,7 @@ namespace Uploader.Helpers
                 throw new ArgumentException("AlbumId must be provided.", nameof(albumId));
 
             string template = ConfigurationManager.AppSettings["AlbumUrlTemplate"] ?? string.Empty;
-            string baseUrl = _siteBaseUrl.TrimEnd('/');
+            string baseUrl = _siteBaseUrl;
             string slug = BuildAlbumCaptionSlug(caption, albumId);
 
             if (!string.IsNullOrWhiteSpace(template))

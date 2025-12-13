@@ -1662,8 +1662,10 @@ namespace Uploader
 
         private string BuildUnsubscribeUrl(string email)
         {
-            string baseUrl = ConfigurationManager.AppSettings["UnsubscribeBaseUrl"] ??
-                             "https://www.cross-stitch-pattern.net/unsubscribe";
+            string configuredBaseUrl = ConfigurationManager.AppSettings["UnsubscribeBaseUrl"];
+            string baseUrl = !string.IsNullOrWhiteSpace(configuredBaseUrl)
+                ? configuredBaseUrl.TrimEnd('/')
+                : $"{_linkHelper.SiteBaseUrl}/unsubscribe";
             string secret = ConfigurationManager.AppSettings["UnsubscribeSecret"] ??
                             "change-me-secret-for-unsubscribe-hmac";
 
