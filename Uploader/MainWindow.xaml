@@ -121,6 +121,11 @@
                         Height="26"
                         Margin="10"
                         Click="BtnUpload_Click" />
+                <Button Content="Send Emails"
+                        Width="110"
+                        Height="26"
+                        Margin="10"
+                        Click="BtnSendEmails_Click" />
 
                 <Button Content="Test Pinterest"
                         Width="120"

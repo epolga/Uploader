@@ -159,7 +159,7 @@ namespace Uploader
                 await RunFullUploadFlowAsync();
 
                 // Continuation is on UI thread (no ConfigureAwait(false) here)
-                txtStatus.Text += "[Upload] Done.\r\n";
+                txtStatus.Text += "[Upload] Done. Use Send Emails when you're ready to notify.\r\n";
             }
             catch (Exception ex)
             {
@@ -171,11 +171,48 @@ namespace Uploader
             }
         }
 
+        private async void BtnSendEmails_Click(object sender, RoutedEventArgs e)
+        {
+            if (PatternInfo == null)
+            {
+                txtStatus.Text += "[Email] Upload a pattern before sending emails.\r\n";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(PatternInfo.PinID))
+            {
+                txtStatus.Text += "[Email] Pinterest pin is missing; complete upload first.\r\n";
+                return;
+            }
+
+            txtStatus.Text += "[Email] Sending notification emails...\r\n";
+
+            try
+            {
+                await SendNotificationEmailsAsync().ConfigureAwait(false);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += "[Email] Sent notification emails to admin and users.\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"[Email] Failed to send notification emails: {ex.Message}\r\n";
+                }));
+
+                MessageBox.Show($"Failed to send emails: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private async void BtnTestPinterest_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                // Hard-coded test path – adjust if needed
+                // Hard-coded test path - adjust if needed
                 var info = new PatternInfo(@"D:\Stitch Craft\Charts\ReadyCharts\2025_11_02\1.pdf");
                 string pinId = await _pinterestHelper.UploadPinForPatternAsync(info, true);
 
@@ -414,36 +451,37 @@ namespace Uploader
             // 4. Insert item into DynamoDB
             await InsertItemIntoDynamoDbAsync(nGlobalPage).ConfigureAwait(false);
 
-            // Precompute a few random album suggestions to reuse across emails.
-            var albumSuggestions = await FetchAlbumSuggestionsAsync(4).ConfigureAwait(false);
-
-            // 5. Notify admin via email
-            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID, albumSuggestions)
-                .ConfigureAwait(false);
-
-            // 6. Reboot EC2 environment (status text is updated via callback which marshals to UI)
+            // 5. Reboot EC2 environment (status text is updated via callback which marshals to UI)
             bool rebooted = await _ec2Helper.RebootInstancesRequest(msg =>
             {
                 Dispatcher.BeginInvoke(new Action(() => { txtStatus.Text += msg; }));
             }).ConfigureAwait(false);
 
-            if (rebooted)
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
-                await SendNotificationMailToUsersAsync(
-                        PatternInfo.DesignID,
-                        PatternInfo.PinID,
-                        userRecipients,
-                        albumSuggestions)
-                    .ConfigureAwait(false);
-            }
-            else
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    txtStatus.Text += "Reboot failed; skipped user notifications.\r\n";
-                }));
-            }
+                txtStatus.Text += rebooted
+                    ? "Reboot requested successfully.\r\n"
+                    : "Reboot failed.\r\n";
+            }));
+        }
+
+        private async Task SendNotificationEmailsAsync()
+        {
+            if (PatternInfo == null)
+                throw new InvalidOperationException("PatternInfo must be set before sending emails.");
+
+            var albumSuggestions = await FetchAlbumSuggestionsAsync(4).ConfigureAwait(false);
+
+            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID, albumSuggestions)
+                .ConfigureAwait(false);
+
+            var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
+            await SendNotificationMailToUsersAsync(
+                    PatternInfo.DesignID,
+                    PatternInfo.PinID,
+                    userRecipients,
+                    albumSuggestions)
+                .ConfigureAwait(false);
         }
 
         private string GetSccFile()
@@ -817,7 +855,7 @@ namespace Uploader
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                txtStatus.Text += "Upload and insertion completed successfully. Starting reboot...\r\n";
+                txtStatus.Text += "Sent notification email to admin.\r\n";
             }));
         }
 
