@@ -1881,17 +1881,17 @@ namespace Uploader
                 : "<p>Hello,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "Roar! I'm so excited to announce the release of my newest cross-stitch pattern: the Happy Lion Design!\r\n\r\n" +
-            "This cheerful, cartoon-style king of the jungle is ready to bring a smile to any nursery, child's room, or project bag. He's designed to be a fun, vibrant stitch for all skill levels.\r\n\r\n" +
-            "Download the pattern and bring this friendly lion to life today!\r\n\r\n" +
+            "Prepare for a splash of color! I am delighted to announce the release of my newest pattern: the Rainbow Butterfly Cross-Stitch!\r\n\r\n" +
+            "This vibrant design features a beautiful butterfly with bold wings painted in the full spectrum of the rainbow. It’s a perfect, cheerful project to brighten any space or to celebrate life’s beautiful colors.\r\n\r\n" +
+            "Download the pattern and let your stitches take flight today!\r\n\r\n" +
             $"View and download: {viewAndDownloadUrl}\r\n" +
             $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
             $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>Roar! I'm so excited to announce the release of my newest cross-stitch pattern: the Happy Lion Design!</p>" +
-            "<p>This cheerful, cartoon-style king of the jungle is ready to bring a smile to any nursery, child's room, or project bag. He's designed to be a fun, vibrant stitch for all skill levels.</p>" +
-            "<p>Download the pattern and bring this friendly lion to life today!</p>" +
+            "<p>Prepare for a splash of color! I am delighted to announce the release of my newest pattern: the Rainbow Butterfly Cross-Stitch!</p>" +
+            "<p>This vibrant design features a beautiful butterfly with bold wings painted in the full spectrum of the rainbow. It’s a perfect, cheerful project to brighten any space or to celebrate life’s beautiful colors.</p>" +
+            "<p>Download the pattern and let your stitches take flight today!</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
             $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
