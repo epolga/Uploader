@@ -223,10 +223,11 @@
                          Grid.Row="4"
                          Grid.Column="1"
                          Margin="0,3"
+                         MinHeight="350"
                          AcceptsReturn="True"
                          TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto"
+                         VerticalScrollBarVisibility="Disabled"
+                         HorizontalScrollBarVisibility="Disabled"
                          HorizontalAlignment="Stretch"
                          VerticalAlignment="Stretch" />
             </Grid>
