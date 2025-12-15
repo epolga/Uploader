@@ -65,7 +65,7 @@ namespace Uploader
         private string _batchFolderPath = string.Empty;
 
         private const string PhotoPrefix = "photos";
-        private const string UserEmailSubject = "❌🪡❌🪡❌ Fluttering with Excitement! My New Rainbow Butterfly Pattern is Here!🦋";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ Paw-sitively Adorable! My New Puppy Pattern is Here!🐶";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
         private int _albumId;
@@ -127,7 +127,7 @@ namespace Uploader
                 // Back on UI thread after await (no ConfigureAwait(false) here),
                 // so we can safely update text boxes
                 SetPatternInfoToUI(PatternInfo);
-                string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
+                string pdfPath = Path.Combine(_batchFolderPath, "Proto.pdf");
                 GetAndShowImage(pdfPath);
             }
             catch (Exception ex)
@@ -367,7 +367,7 @@ namespace Uploader
         /// </summary>
         private async Task<PatternInfo> CreatePatternInfoAsync()
         {
-            string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
+            string pdfPath = Path.Combine(_batchFolderPath, "Proto.pdf");
             var patternInfo = new PatternInfo(pdfPath);
 
             patternInfo.AlbumId = LoadAlbumIdFromTxt();
@@ -1307,7 +1307,7 @@ namespace Uploader
 
                 Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
 
-                int nSendingLimit = 110;
+                int nSendingLimit = 220;
                 int iSent = 0;
                 do
                 {
@@ -1374,7 +1374,7 @@ namespace Uploader
                     }
 
                     lastEvaluatedKey = response.LastEvaluatedKey;
-                    if (iSent++ > nSendingLimit) { break; }
+                    //if (iSent++ > nSendingLimit) { break; }
 
                 } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
 
@@ -1881,17 +1881,17 @@ namespace Uploader
                 : "<p>Hello,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "Prepare for a splash of color! I am delighted to announce the release of my newest pattern: the Rainbow Butterfly Cross-Stitch!\r\n\r\n" +
-            "This vibrant design features a beautiful butterfly with bold wings painted in the full spectrum of the rainbow. It’s a perfect, cheerful project to brighten any space or to celebrate life’s beautiful colors.\r\n\r\n" +
-            "Download the pattern and let your stitches take flight today!\r\n\r\n" +
+            "Get ready for some serious cuteness! I am thrilled to announce the release of my newest pattern: the Cute Puppy Cross-Stitch!\r\n\r\n" +
+            "This little pup, with its big, sweet eyes and cheerful demeanor, is ready to melt hearts. Stitched on a bright, grassy background, it's a perfect beginner project or a sweet, heartfelt gift for any dog lover.\r\n\r\n" +
+            "Download the pattern and bring this furry friend to life today!\r\n\r\n" +
             $"View and download: {viewAndDownloadUrl}\r\n" +
             $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
             $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>Prepare for a splash of color! I am delighted to announce the release of my newest pattern: the Rainbow Butterfly Cross-Stitch!</p>" +
-            "<p>This vibrant design features a beautiful butterfly with bold wings painted in the full spectrum of the rainbow. It’s a perfect, cheerful project to brighten any space or to celebrate life’s beautiful colors.</p>" +
-            "<p>Download the pattern and let your stitches take flight today!</p>" +
+            "<p>Get ready for some serious cuteness! I am thrilled to announce the release of my newest pattern: the Cute Puppy Cross-Stitch!</p>" +
+            "<p>This little pup, with its big, sweet eyes and cheerful demeanor, is ready to melt hearts. Stitched on a bright, grassy background, it's a perfect beginner project or a sweet, heartfelt gift for any dog lover.</p>" +
+            "<p>Download the pattern and bring this furry friend to life today!</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
             $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
