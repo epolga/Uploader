@@ -73,7 +73,7 @@ namespace Uploader
             "Warm regards,\r\n" +
             "Ann";
         private const string PhotoPrefix = "photos";
-        private const string UserEmailSubject = "❌🪡❌🪡❌ Paw-sitively Adorable! My New Puppy Pattern is Here!🐶";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ A new Dreamy Kitten pattern is ready 😻";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
@@ -2189,17 +2189,17 @@ namespace Uploader
                 : "<p>Hello,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "Get ready for some serious cuteness! I am thrilled to announce the release of my newest pattern: the Cute Puppy Cross-Stitch!\r\n\r\n" +
-            "This little pup, with its big, sweet eyes and cheerful demeanor, is ready to melt hearts. Stitched on a bright, grassy background, it's a perfect beginner project or a sweet, heartfelt gift for any dog lover.\r\n\r\n" +
-            "Download the pattern and bring this furry friend to life today!\r\n\r\n" +
+            "I have a new pattern to share: the Dreamy Kitten Cross-Stitch.\r\n\r\n" +
+            "It features a calm kitten against a soft, pastel swirl of pinks, purples, and blues. I kept the palette gentle and the expression warm, so it feels peaceful to stitch and easy to display.\r\n\r\n" +
+            "If you'd like to stitch it, the download is here:\r\n\r\n" +
             $"View and download: {viewAndDownloadUrl}\r\n" +
             $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
             $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>Get ready for some serious cuteness! I am thrilled to announce the release of my newest pattern: the Cute Puppy Cross-Stitch!</p>" +
-            "<p>This little pup, with its big, sweet eyes and cheerful demeanor, is ready to melt hearts. Stitched on a bright, grassy background, it's a perfect beginner project or a sweet, heartfelt gift for any dog lover.</p>" +
-            "<p>Download the pattern and bring this furry friend to life today!</p>" +
+            "<p>I have a new pattern to share: the Dreamy Kitten Cross-Stitch.</p>" +
+            "<p>It features a calm kitten against a soft, pastel swirl of pinks, purples, and blues. I kept the palette gentle and the expression warm, so it feels peaceful to stitch and easy to display.</p>" +
+            "<p>If you'd like to stitch it, the download is here:</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
             $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
