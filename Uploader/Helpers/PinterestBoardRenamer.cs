@@ -206,7 +206,7 @@ namespace Uploader.Helpers
 
             string description =
                 $"Cross stitch patterns from album {safeCaption}. " +
-                "Discover printable cross stitch charts and downloadable PDF patterns at Cross-Stitch-Pattern.net. " +
+                "Discover printable cross stitch charts and downloadable PDF patterns at Cross-Stitch.com . " +
                 "Perfect for both beginners and experienced stitchers who love detailed embroidery designs.";
 
             // Keep it reasonably short (Pinterest allows long descriptions but no need to overdo it).

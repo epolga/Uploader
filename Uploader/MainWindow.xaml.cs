@@ -64,9 +64,18 @@ namespace Uploader
         private string _imageFilePath = string.Empty;
         private string _batchFolderPath = string.Empty;
 
+        private const string TextEmailSubjectDefault = "❌🪡❌🪡❌ New website address 🧵";
+        private const string TextEmailBodyDefault =
+            "Hello <username>,\r\n" +
+            "I'm writing to let you know that my site has moved to a new address: https://cross-stitch.com\r\n" +
+            "If you have a bookmark saved, please update it.\r\n\r\n" +
+            "Everything works the same as before.\r\n" +
+            "Warm regards,\r\n" +
+            "Ann";
         private const string PhotoPrefix = "photos";
         private const string UserEmailSubject = "❌🪡❌🪡❌ Paw-sitively Adorable! My New Puppy Pattern is Here!🐶";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
+        private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
         private int _albumId;
 
@@ -127,7 +136,7 @@ namespace Uploader
                 // Back on UI thread after await (no ConfigureAwait(false) here),
                 // so we can safely update text boxes
                 SetPatternInfoToUI(PatternInfo);
-                string pdfPath = Path.Combine(_batchFolderPath, "Proto.pdf");
+                string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
                 GetAndShowImage(pdfPath);
             }
             catch (Exception ex)
@@ -204,6 +213,31 @@ namespace Uploader
                 }));
 
                 MessageBox.Show($"Failed to send emails: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void BtnSendTextEmails_Click(object sender, RoutedEventArgs e)
+        {
+            txtStatus.Text += "[Email/Text] Sending text-only emails...\r\n";
+
+            try
+            {
+                await SendTextOnlyEmailsAsync().ConfigureAwait(false);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += "[Email/Text] Sent text-only emails to admin and users.\r\n";
+                }));
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"[Email/Text] Failed to send text-only emails: {ex.Message}\r\n";
+                }));
+
+                MessageBox.Show($"Failed to send text-only emails: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -367,7 +401,7 @@ namespace Uploader
         /// </summary>
         private async Task<PatternInfo> CreatePatternInfoAsync()
         {
-            string pdfPath = Path.Combine(_batchFolderPath, "Proto.pdf");
+            string pdfPath = Path.Combine(_batchFolderPath, "1.pdf");
             var patternInfo = new PatternInfo(pdfPath);
 
             patternInfo.AlbumId = LoadAlbumIdFromTxt();
@@ -482,6 +516,96 @@ namespace Uploader
                     userRecipients,
                     albumSuggestions)
                 .ConfigureAwait(false);
+        }
+
+        private async Task SendTextOnlyEmailsAsync()
+        {
+            string? sender = ConfigurationManager.AppSettings["SenderEmail"];
+            string? admin = ConfigurationManager.AppSettings["AdminEmail"];
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+            string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
+            string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
+            string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
+            string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
+
+            string subject = ConfigurationManager.AppSettings["TextEmailSubject"] ?? TextEmailSubjectDefault;
+            string baseTextBody = ConfigurationManager.AppSettings["TextEmailBody"] ?? TextEmailBodyDefault;
+            string baseHtmlBody = ConvertPlainTextToHtml(baseTextBody);
+
+            if (string.IsNullOrWhiteSpace(sender))
+                throw new InvalidOperationException("SenderEmail is not configured.");
+            if (string.IsNullOrWhiteSpace(subject))
+                throw new InvalidOperationException("Text email subject is empty.");
+            if (string.IsNullOrWhiteSpace(baseTextBody))
+                throw new InvalidOperationException("Text email body is empty.");
+
+            var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(admin))
+            {
+                string adminUnsubUrl = BuildUnsubscribeUrl(admin);
+                var adminHeaders = BuildUnsubscribeHeaders(adminUnsubUrl, sender);
+                string adminBaseText = PersonalizeTextTemplate(baseTextBody, null);
+                string adminBaseHtml = PersonalizeHtmlTemplate(baseHtmlBody, null);
+                string adminTextBody = adminBaseText + $"\r\n\r\nUnsubscribe: {adminUnsubUrl}";
+                string? adminHtmlBody = string.IsNullOrWhiteSpace(adminBaseHtml)
+                    ? null
+                    : adminBaseHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{adminUnsubUrl}\">unsubscribe</a>.</p>";
+
+                await _emailHelper.SendEmailAsync(
+                    _sesClient,
+                    sender,
+                    new[] { admin },
+                    subject,
+                    adminTextBody,
+                    adminHtmlBody,
+                    adminHeaders).ConfigureAwait(false);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += "[TextEmail] Sent text-only email to admin.\r\n";
+                }));
+            }
+
+            var recipients = userRecipients;
+           
+            if (!string.IsNullOrWhiteSpace(admin))
+            {
+                recipients = userRecipients
+                    .Where(r => !string.Equals(r.Email, admin, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            if (recipients.Count == 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += "[TextEmail] No user recipients found.\r\n";
+                }));
+                return;
+            }
+
+            int totalUserCount = await CountUsersAsync(
+                    usersTable,
+                    $"{verifiedAttribute} = :trueVal AND (attribute_not_exists({unsubscribedAttribute}) OR {unsubscribedAttribute} = :falseVal)",
+                    new Dictionary<string, AttributeValue>
+                    {
+                        { ":trueVal", new AttributeValue { BOOL = true } },
+                        { ":falseVal", new AttributeValue { BOOL = false } }
+                    })
+                .ConfigureAwait(false);
+
+            await SendTextEmailsWithProgressAsync(
+                "[TextEmail]",
+                recipients,
+                subject,
+                sender,
+                baseTextBody,
+                baseHtmlBody,
+                totalUserCount,
+                usersTable,
+                emailAttribute,
+                userIdAttribute).ConfigureAwait(false);
         }
 
         private string GetSccFile()
@@ -608,10 +732,59 @@ namespace Uploader
             string key3 = $"{designFolder}/Stitch{designId}_3_Kit.pdf";
             string key5 = $"{designFolder}/Stitch{designId}_5_Kit.pdf";
 
-            await UploadPdfFileAsync(pdf1Path, mainKey).ConfigureAwait(false);
-            await UploadPdfFileAsync(pdf1Path, key1).ConfigureAwait(false);
-            await UploadPdfFileAsync(pdf3Path, key3).ConfigureAwait(false);
-            await UploadPdfFileAsync(pdf5Path, key5).ConfigureAwait(false);
+            string convertedPdf1Path = await ConvertPdfForUploadAsync(pdf1Path).ConfigureAwait(false);
+            string convertedPdf3Path = await ConvertPdfForUploadAsync(pdf3Path).ConfigureAwait(false);
+            string convertedPdf5Path = await ConvertPdfForUploadAsync(pdf5Path).ConfigureAwait(false);
+
+            await UploadPdfFileAsync(convertedPdf1Path, mainKey).ConfigureAwait(false);
+            await UploadPdfFileAsync(convertedPdf1Path, key1).ConfigureAwait(false);
+            await UploadPdfFileAsync(convertedPdf3Path, key3).ConfigureAwait(false);
+            await UploadPdfFileAsync(convertedPdf5Path, key5).ConfigureAwait(false);
+        }
+
+        private static async Task<string> ConvertPdfForUploadAsync(string inputPath)
+        {
+            if (!File.Exists(inputPath))
+                throw new FileNotFoundException("Input PDF not found.", inputPath);
+
+            if (!File.Exists(ConverterExePath))
+                throw new FileNotFoundException("Converter.exe not found.", ConverterExePath);
+
+            string? folder = Path.GetDirectoryName(inputPath);
+            string outputPath = Path.Combine(folder ?? string.Empty,
+                $"{Path.GetFileNameWithoutExtension(inputPath)}.converted.pdf");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = ConverterExePath,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            startInfo.ArgumentList.Add(inputPath);
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+                throw new InvalidOperationException("Failed to start PDF converter process.");
+
+            Task<string> stdOutTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> stdErrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            string stdOut = await stdOutTask.ConfigureAwait(false);
+            string stdErr = await stdErrTask.ConfigureAwait(false);
+
+            if (process.ExitCode != 0)
+            {
+                string details = string.IsNullOrWhiteSpace(stdErr) ? stdOut : stdErr;
+                throw new Exception(
+                    $"Converter failed for {Path.GetFileName(inputPath)} (exit {process.ExitCode}). {details}".Trim());
+            }
+
+            if (!File.Exists(outputPath))
+                throw new Exception($"Converter did not produce expected output: {outputPath}");
+
+            return outputPath;
         }
 
         private Task UploadPdfFileAsync(string filePath, string key)
@@ -1333,7 +1506,7 @@ namespace Uploader
                                     email = entry.S.Trim();
                                 }
                             }
-                        }
+                        } 
 
                         if (string.IsNullOrWhiteSpace(email))
                             continue;
@@ -1370,6 +1543,21 @@ namespace Uploader
                             cid = cidAttr.S.Trim();
                         }
 
+                        if (onlyVerified)
+                        {
+                            bool isVerified = item.TryGetValue(verifiedAttribute, out var verifiedAttr) &&
+                                              verifiedAttr.BOOL;
+                            if (!isVerified)
+                                continue;
+                        }
+
+                        if (onlySubscribed)
+                        {
+                            bool unsubscribed = item.TryGetValue(unsubscribedAttribute, out var unsubAttr) &&
+                                                unsubAttr.BOOL;
+                            if (unsubscribed)
+                                continue;
+                        }
                         recipients.Add(new UserRecipient(email, firstName, idAttr, cid));
                     }
 
@@ -1768,6 +1956,126 @@ namespace Uploader
                 { "List-Unsubscribe", $"<{mailto}>, <{unsubscribeUrl}>" },
                 { "List-Unsubscribe-Post", "List-Unsubscribe=One-Click" }
             };
+        }
+
+        private static string ConvertPlainTextToHtml(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return string.Empty;
+
+            var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+            var paragraphs = normalized.Split(new[] { "\n\n" }, StringSplitOptions.None);
+            var htmlParagraphs = paragraphs
+                .Select(p => WebUtility.HtmlEncode(p).Replace("\n", "<br/>"))
+                .Where(p => !string.IsNullOrWhiteSpace(p));
+
+            return string.Join(string.Empty, htmlParagraphs.Select(p => $"<p>{p}</p>"));
+        }
+
+        private static string PersonalizeTextTemplate(string template, string? firstName)
+        {
+            if (string.IsNullOrWhiteSpace(template))
+                return string.Empty;
+
+            string name = string.IsNullOrWhiteSpace(firstName) ? "friend" : firstName.Trim();
+            return template.Replace("<username>", name);
+        }
+
+        private static string PersonalizeHtmlTemplate(string template, string? firstName)
+        {
+            if (string.IsNullOrWhiteSpace(template))
+                return string.Empty;
+
+            string name = string.IsNullOrWhiteSpace(firstName) ? "friend" : firstName.Trim();
+            string encodedName = WebUtility.HtmlEncode(name);
+            return template
+                .Replace("&lt;username&gt;", encodedName)
+                .Replace("<username>", encodedName);
+        }
+
+        private async Task SendTextEmailsWithProgressAsync(
+            string label,
+            List<UserRecipient> recipients,
+            string subject,
+            string sender,
+            string baseTextBody,
+            string baseHtmlBody,
+            int totalCount,
+            string usersTable,
+            string emailAttribute,
+            string userIdAttribute)
+        {
+            if (recipients == null || recipients.Count == 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"{label} No recipients found.\r\n";
+                }));
+                return;
+            }
+
+            int targetCount = Math.Max(totalCount, recipients.Count);
+            var stopwatch = Stopwatch.StartNew();
+            int sent = 0;
+
+            foreach (var recipient in recipients)
+            {
+                string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
+                var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
+                string personalizedText = PersonalizeTextTemplate(baseTextBody, recipient.FirstName);
+                string personalizedHtml = PersonalizeHtmlTemplate(baseHtmlBody, recipient.FirstName);
+
+                string textBody = personalizedText + $"\r\n\r\nUnsubscribe: {unsubscribeUrl}";
+                string? htmlBody = string.IsNullOrWhiteSpace(personalizedHtml)
+                    ? null
+                    : personalizedHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+
+                await _emailHelper.SendEmailAsync(
+                    _sesClient,
+                    sender,
+                    new[] { recipient.Email },
+                    subject,
+                    textBody,
+                    htmlBody,
+                    unsubscribeHeaders).ConfigureAwait(false);
+
+                try
+                {
+                    await UpdateLastEmailDateAsync(recipient, usersTable, emailAttribute, userIdAttribute)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        txtStatus.Text += $"{label} Failed to update LastEmailDate for {recipient.Email}: {ex.Message}\r\n";
+                    }));
+                }
+
+                sent++;
+
+                if (sent % 50 == 0 || sent == recipients.Count)
+                {
+                    TimeSpan elapsed = stopwatch.Elapsed;
+                    double avgSeconds = sent > 0 ? elapsed.TotalSeconds / sent : 0;
+                    int remaining = Math.Max(targetCount - sent, 0);
+                    TimeSpan eta = avgSeconds > 0 ? TimeSpan.FromSeconds(avgSeconds * remaining) : TimeSpan.Zero;
+                    double percentRemaining = targetCount > 0 ? (remaining * 100.0 / targetCount) : 0;
+
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        txtStatus.Text +=
+                            $"{label} Sent {sent}/{targetCount} | Elapsed {elapsed:hh\\:mm\\:ss} | Avg {avgSeconds:F2}s/email | ETA {eta:hh\\:mm\\:ss} | Remaining {remaining} ({percentRemaining:F1}% left).\r\n";
+                    }));
+                }
+            }
+
+            stopwatch.Stop();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text += $"{label} Finished sending {sent} email(s) in {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
+            }));
         }
 
         private async Task SendEmailsWithProgressAsync(
