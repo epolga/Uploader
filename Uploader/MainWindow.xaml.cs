@@ -203,7 +203,7 @@ namespace Uploader
             }
 
             _isSendingEmails = true;
-            var sendButton = sender as Button;
+            var sendButton = sender as System.Windows.Controls.Button;
             if (sendButton != null)
                 sendButton.IsEnabled = false;
 
@@ -250,7 +250,7 @@ namespace Uploader
             }
 
             _isSendingTextEmails = true;
-            var sendButton = sender as Button;
+            var sendButton = sender as System.Windows.Controls.Button;
             if (sendButton != null)
                 sendButton.IsEnabled = false;
 
