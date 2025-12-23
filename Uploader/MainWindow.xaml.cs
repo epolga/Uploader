@@ -63,6 +63,8 @@ namespace Uploader
 
         private string _imageFilePath = string.Empty;
         private string _batchFolderPath = string.Empty;
+        private bool _isSendingEmails;
+        private bool _isSendingTextEmails;
 
         private const string TextEmailSubjectDefault = "❌🪡❌🪡❌ New website address 🧵";
         private const string TextEmailBodyDefault =
@@ -194,6 +196,17 @@ namespace Uploader
                 return;
             }
 
+            if (_isSendingEmails)
+            {
+                txtStatus.Text += "[Email] Send already in progress.\r\n";
+                return;
+            }
+
+            _isSendingEmails = true;
+            var sendButton = sender as Button;
+            if (sendButton != null)
+                sendButton.IsEnabled = false;
+
             txtStatus.Text += "[Email] Sending notification emails...\r\n";
 
             try
@@ -215,10 +228,32 @@ namespace Uploader
                 MessageBox.Show($"Failed to send emails: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            finally
+            {
+                _isSendingEmails = false;
+                if (sendButton != null)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        sendButton.IsEnabled = true;
+                    }));
+                }
+            }
         }
 
         private async void BtnSendTextEmails_Click(object sender, RoutedEventArgs e)
         {
+            if (_isSendingTextEmails)
+            {
+                txtStatus.Text += "[Email/Text] Send already in progress.\r\n";
+                return;
+            }
+
+            _isSendingTextEmails = true;
+            var sendButton = sender as Button;
+            if (sendButton != null)
+                sendButton.IsEnabled = false;
+
             txtStatus.Text += "[Email/Text] Sending text-only emails...\r\n";
 
             try
@@ -239,6 +274,17 @@ namespace Uploader
 
                 MessageBox.Show($"Failed to send text-only emails: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                _isSendingTextEmails = false;
+                if (sendButton != null)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        sendButton.IsEnabled = true;
+                    }));
+                }
             }
         }
 
