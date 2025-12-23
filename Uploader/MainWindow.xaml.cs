@@ -73,7 +73,7 @@ namespace Uploader
             "Warm regards,\r\n" +
             "Ann";
         private const string PhotoPrefix = "photos";
-        private const string UserEmailSubject = "❌🪡❌🪡❌ A new Dreamy Kitten pattern is ready 😻";
+        private const string UserEmailSubject = "❌🪡❌🪡❌ Blue Bolt Buddy PDF is ready! 🔵";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
@@ -995,6 +995,7 @@ namespace Uploader
 
             string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
             string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
+            string patternUrlWithUtm = AppendUtmParameters(patternUrl);
             string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
                 ? "New cross stitch pattern"
                 : PatternInfo.Title;
@@ -1005,7 +1006,7 @@ namespace Uploader
 
             string htmlBody =
                 $"<p>The upload for album {_albumId} design {designId} was successful.</p>" +
-                $"<p><a href=\"{patternUrl}\">" +
+                $"<p><a href=\"{patternUrlWithUtm}\">" +
                 $"<img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"/>" +
                 $"</a></p>" +
                 $"<p>Pin ID: {pinId}</p>" +
@@ -1733,7 +1734,7 @@ namespace Uploader
 
             string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
             string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
-            string imageUrlWithTracking = AppendTrackingParameters(imageUrl, cid, eid);
+            string imageUrlForEmail = imageUrl;
             string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
             string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
 
@@ -1742,7 +1743,7 @@ namespace Uploader
             string greetingText = BuildUserGreetingText("admin");
             string greetingHtml = BuildUserGreetingHtml("admin");
             string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
-            string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
+            string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlForEmail, siteUrlWithTracking, facebookUrl, altText);
             string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
             string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
@@ -1785,8 +1786,10 @@ namespace Uploader
                 : PatternInfo.Title;
             string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
 
-            string baseTextBody = BuildUserBaseTextBody(patternUrl, siteUrl, facebookUrl);
-            string baseHtmlBody = BuildUserBaseHtmlBody(patternUrl, imageUrl, siteUrl, facebookUrl, altText);
+            string patternUrlWithUtm = AppendUtmParameters(patternUrl);
+            string siteUrlWithUtm = AppendUtmParameters(siteUrl);
+            string baseTextBody = BuildUserBaseTextBody(patternUrlWithUtm, siteUrlWithUtm, facebookUrl);
+            string baseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithUtm, imageUrl, siteUrlWithUtm, facebookUrl, altText);
             string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
             string albumText = BuildAlbumSuggestionsText(albumSuggestions);
 
@@ -1941,11 +1944,76 @@ namespace Uploader
             if (!string.IsNullOrWhiteSpace(eid))
                 queryParts.Add($"eid={Uri.EscapeDataString(eid)}");
 
-            if (queryParts.Count == 0)
+            string trackedUrl = queryParts.Count == 0
+                ? url
+                : AppendQueryParameters(url, queryParts);
+
+            return AppendUtmParameters(trackedUrl);
+        }
+
+        private static string AppendUtmParameters(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
                 return url;
 
-            string separator = url.Contains("?") ? "&" : "?";
-            return $"{url}{separator}{string.Join("&", queryParts)}";
+            var queryParts = new List<string>();
+
+            if (!HasQueryParameter(url, "utm_source"))
+                queryParts.Add("utm_source=newsletter");
+            if (!HasQueryParameter(url, "utm_medium"))
+                queryParts.Add("utm_medium=email");
+            if (!HasQueryParameter(url, "utm_campaign"))
+            {
+                string campaign = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                queryParts.Add($"utm_campaign={Uri.EscapeDataString(campaign)}");
+            }
+
+            return queryParts.Count == 0
+                ? url
+                : AppendQueryParameters(url, queryParts);
+        }
+
+        private static bool HasQueryParameter(string url, string parameterName)
+        {
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(parameterName))
+                return false;
+
+            int queryIndex = url.IndexOf('?');
+            if (queryIndex < 0)
+                return false;
+
+            string query = url.Substring(queryIndex + 1);
+            int hashIndex = query.IndexOf('#');
+            if (hashIndex >= 0)
+                query = query.Substring(0, hashIndex);
+
+            foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eqIndex = part.IndexOf('=');
+                string name = eqIndex >= 0 ? part.Substring(0, eqIndex) : part;
+                if (string.Equals(name, parameterName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static string AppendQueryParameters(string url, IReadOnlyList<string> parameters)
+        {
+            if (string.IsNullOrWhiteSpace(url) || parameters == null || parameters.Count == 0)
+                return url;
+
+            string fragment = string.Empty;
+            string baseUrl = url;
+            int hashIndex = url.IndexOf('#');
+            if (hashIndex >= 0)
+            {
+                fragment = url.Substring(hashIndex);
+                baseUrl = url.Substring(0, hashIndex);
+            }
+
+            string separator = baseUrl.Contains("?") ? "&" : "?";
+            return $"{baseUrl}{separator}{string.Join("&", parameters)}{fragment}";
         }
 
         private static Dictionary<string, string> BuildUnsubscribeHeaders(string unsubscribeUrl, string sender)
@@ -2114,7 +2182,6 @@ namespace Uploader
                 string cid = recipient.Cid ?? string.Empty;
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
                 string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
-                string imageUrlWithTracking = AppendTrackingParameters(imageUrl, cid, eid);
                 string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
                 string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
 
@@ -2123,7 +2190,7 @@ namespace Uploader
                 string greetingText = BuildUserGreetingText(recipient.FirstName);
                 string greetingHtml = BuildUserGreetingHtml(recipient.FirstName);
                 string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
-                string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlWithTracking, siteUrlWithTracking, facebookUrl, altText);
+                string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrl, siteUrlWithTracking, facebookUrl, altText);
                 string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
                 string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
@@ -2180,28 +2247,28 @@ namespace Uploader
 
         private static string BuildUserGreetingText(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
-                ? $"Hello {firstName},\r\n\r\n"
-                : "Hello,\r\n\r\n";
+                ? $"Hi {firstName},\r\n\r\n"
+                : "Hi,\r\n\r\n";
 
         private static string BuildUserGreetingHtml(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
-                ? $"<p>Hello {WebUtility.HtmlEncode(firstName)},</p>"
-                : "<p>Hello,</p>";
+                ? $"<p>Hi {WebUtility.HtmlEncode(firstName)},</p>"
+                : "<p>Hi,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "I have a new pattern to share: the Dreamy Kitten Cross-Stitch.\r\n\r\n" +
-            "It features a calm kitten against a soft, pastel swirl of pinks, purples, and blues. I kept the palette gentle and the expression warm, so it feels peaceful to stitch and easy to display.\r\n\r\n" +
-            "If you'd like to stitch it, the download is here:\r\n\r\n" +
-            $"View and download: {viewAndDownloadUrl}\r\n" +
+            "I just wanted to send a quick note! The PDF cross-stitch pattern for the Blue Bolt Buddy is finished and has been uploaded to the site. I think you'll really enjoy stitching this fun, little alien. I always love seeing what everyone creates.\r\n\r\n" +
+            "You can download the pattern right here:\r\n" +
+            $"{viewAndDownloadUrl}\r\n\r\n" +
+            "Happy Stitching,\r\n" +
             $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
             $"Join me on Facebook: {facebookLink} - I'd love to connect.";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>I have a new pattern to share: the Dreamy Kitten Cross-Stitch.</p>" +
-            "<p>It features a calm kitten against a soft, pastel swirl of pinks, purples, and blues. I kept the palette gentle and the expression warm, so it feels peaceful to stitch and easy to display.</p>" +
-            "<p>If you'd like to stitch it, the download is here:</p>" +
+            "<p>I just wanted to send a quick note! The PDF cross-stitch pattern for the Blue Bolt Buddy is finished and has been uploaded to the site. I think you'll really enjoy stitching this fun, little alien. I always love seeing what everyone creates.</p>" +
+            "<p>You can download the pattern right here:</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
-            $"<p><a href=\"{viewAndDownloadUrl}\">Click here to view and download the pattern</a></p>" +
+            $"<p><a href=\"{viewAndDownloadUrl}\">Download the pattern here</a></p>" +
+            "<p>Happy Stitching,</p>" +
             $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
             $"<p>Join me on Facebook: <a href=\"{facebookLink}\">Ann Cross Stitch</a>. I'd love to connect.</p>";
 
