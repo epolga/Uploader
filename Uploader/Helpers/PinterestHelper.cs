@@ -60,7 +60,10 @@ namespace Uploader.Helpers
         /// <param name="pattern">Cross-stitch pattern metadata.</param>
         /// <param name="albumId">Numeric AlbumID of this design.</param>
         /// <returns>Created Pin ID.</returns>
-        public async Task<string> UploadPinForPatternAsync(PatternInfo pattern, bool test = false)
+        public async Task<string> UploadPinForPatternAsync(
+            PatternInfo pattern,
+            bool test = false,
+            string? photoFileName = null)
         {
             if (pattern == null) throw new ArgumentNullException(nameof(pattern));
             if (test)
@@ -79,7 +82,10 @@ namespace Uploader.Helpers
 
             // 2. Build URLs
             string patternUrl = _linkHelper.BuildPatternUrl(pattern);
-            string imageUrl = _linkHelper.BuildImageUrl(pattern.DesignID, pattern.AlbumId);
+            string imageUrl = _linkHelper.BuildImageUrl(
+                pattern.DesignID,
+                pattern.AlbumId,
+                photoFileName ?? "4.jpg");
 
             // 3. Analyze theme and build SEO text
             var theme = DetectTheme(pattern);

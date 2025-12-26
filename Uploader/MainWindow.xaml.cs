@@ -62,6 +62,7 @@ namespace Uploader
         private readonly TransferUtility _s3TransferUtility;
 
         private string _imageFilePath = string.Empty;
+        private string _pinterestImageFilePath = string.Empty;
         private string _batchFolderPath = string.Empty;
         private bool _isSendingEmails;
         private bool _isSendingTextEmails;
@@ -75,6 +76,10 @@ namespace Uploader
             "Warm regards,\r\n" +
             "Ann";
         private const string PhotoPrefix = "photos";
+        private const string PinterestPhotoFileName = "4_pinterest.jpg";
+        private const int PinterestTargetWidth = 1000;
+        private const int PinterestTargetHeight = 1500;
+        private const string PinterestWatermarkText = "cross-stitch.com";
         private const string UserEmailSubject = "❌🪡❌🪡❌ Blue Bolt Buddy PDF is ready! 🔵";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
@@ -114,6 +119,7 @@ namespace Uploader
 
             _batchFolderPath = dialog.SelectedPath;
             _imageFilePath = Path.Combine(_batchFolderPath, "4.jpg");
+            _pinterestImageFilePath = Path.Combine(_batchFolderPath, PinterestPhotoFileName);
 
             // UI updates are safe here (we are on UI thread)
             txtFolderPath.Text = _batchFolderPath;
@@ -526,7 +532,10 @@ namespace Uploader
             await UploadImageToS3Async(PatternInfo.DesignID).ConfigureAwait(false);
 
             // 3. Create Pinterest pin
-            PatternInfo.PinID = await _pinterestHelper.UploadPinForPatternAsync(PatternInfo).ConfigureAwait(false);
+            string? pinterestPhotoFileName = GetPinterestPhotoFileName();
+            PatternInfo.PinID = await _pinterestHelper
+                .UploadPinForPatternAsync(PatternInfo, photoFileName: pinterestPhotoFileName)
+                .ConfigureAwait(false);
 
             // 4. Insert item into DynamoDB
             await InsertItemIntoDynamoDbAsync(nGlobalPage).ConfigureAwait(false);
@@ -848,17 +857,28 @@ namespace Uploader
 
         private async Task UploadImageToS3Async(int designId)
         {
-            string photoKey = GetPhotoKey(designId);
+            await UploadPhotoFileAsync(designId, _imageFilePath).ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(_pinterestImageFilePath) && File.Exists(_pinterestImageFilePath))
+            {
+                await UploadPhotoFileAsync(designId, _pinterestImageFilePath).ConfigureAwait(false);
+            }
+        }
+
+        private Task UploadPhotoFileAsync(int designId, string filePath)
+        {
+            string fileName = Path.GetFileName(filePath);
+            string photoKey = GetPhotoKey(designId, fileName);
 
             var request = new TransferUtilityUploadRequest
             {
-                FilePath = _imageFilePath,
+                FilePath = filePath,
                 BucketName = _bucketName,
                 Key = photoKey,
                 ContentType = "image/jpeg"
             };
 
-            await _s3TransferUtility.UploadAsync(request).ConfigureAwait(false);
+            return _s3TransferUtility.UploadAsync(request);
         }
 
         private async Task InsertItemIntoDynamoDbAsync(int nGlobalPage)
@@ -1929,10 +1949,20 @@ namespace Uploader
             await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
         }
 
-        private string GetPhotoKey(int designId)
+        private string GetPhotoKey(int designId, string fileName)
         {
-            string fileName = Path.GetFileName(_imageFilePath);
             return $"{PhotoPrefix}/{_albumId}/{designId}/{fileName}";
+        }
+
+        private string? GetPinterestPhotoFileName()
+        {
+            if (string.IsNullOrWhiteSpace(_pinterestImageFilePath))
+                return null;
+
+            if (!File.Exists(_pinterestImageFilePath))
+                return null;
+
+            return Path.GetFileName(_pinterestImageFilePath);
         }
 
         private string BuildUnsubscribeUrl(string email)
@@ -2598,6 +2628,122 @@ namespace Uploader
             {
                 ShowError("Could not save image file");
             }
+
+            try
+            {
+                SavePinterestImage(bitmap);
+            }
+            catch
+            {
+                ShowError("Could not save Pinterest image file");
+            }
+        }
+
+        private void SavePinterestImage(System.Drawing.Bitmap source)
+        {
+            if (string.IsNullOrWhiteSpace(_pinterestImageFilePath))
+                return;
+
+            using var pinterestImage = CreatePinterestImage(source);
+            pinterestImage.Save(_pinterestImageFilePath, System.Drawing.Imaging.ImageFormat.Jpeg);
+        }
+
+        private static System.Drawing.Bitmap CreatePinterestImage(System.Drawing.Bitmap source)
+        {
+            var canvas = new System.Drawing.Bitmap(
+                PinterestTargetWidth,
+                PinterestTargetHeight,
+                System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+
+            using var graphics = System.Drawing.Graphics.FromImage(canvas);
+            graphics.Clear(System.Drawing.Color.White);
+            graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+            graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+            graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+            float scale = Math.Min(
+                PinterestTargetWidth / (float)source.Width,
+                PinterestTargetHeight / (float)source.Height);
+
+            int scaledWidth = (int)Math.Round(source.Width * scale);
+            int scaledHeight = (int)Math.Round(source.Height * scale);
+
+            int x = (PinterestTargetWidth - scaledWidth) / 2;
+            bool dockTop = source.Width >= source.Height;
+            int y = dockTop ? 0 : (PinterestTargetHeight - scaledHeight) / 2;
+
+            graphics.DrawImage(source, new System.Drawing.Rectangle(x, y, scaledWidth, scaledHeight));
+
+            if (dockTop)
+            {
+                TryDrawPinterestText(graphics, y + scaledHeight);
+            }
+
+            return canvas;
+        }
+
+        private static void TryDrawPinterestText(System.Drawing.Graphics graphics, int imageBottom)
+        {
+            int bottomSpace = PinterestTargetHeight - imageBottom;
+            if (bottomSpace < 80)
+                return;
+
+            float margin = Math.Max(12f, bottomSpace * 0.12f);
+            float fontSize = Math.Min(PinterestTargetWidth / 16f, bottomSpace - margin);
+            if (fontSize < 18f)
+                return;
+
+            float maxWidth = PinterestTargetWidth - (margin * 2f);
+            float fittedFontSize = FitFontSize(graphics, PinterestWatermarkText, fontSize, maxWidth);
+            if (fittedFontSize < 18f)
+                return;
+
+            using var font = new System.Drawing.Font(
+                "Arial",
+                fittedFontSize,
+                System.Drawing.FontStyle.Bold,
+                System.Drawing.GraphicsUnit.Pixel);
+
+            var size = graphics.MeasureString(PinterestWatermarkText, font);
+            float textY = PinterestTargetHeight - size.Height - margin;
+            if (textY < imageBottom)
+                return;
+
+            using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(60, 60, 60));
+            using var format = new System.Drawing.StringFormat
+            {
+                Alignment = System.Drawing.StringAlignment.Center,
+                LineAlignment = System.Drawing.StringAlignment.Near
+            };
+
+            graphics.DrawString(
+                PinterestWatermarkText,
+                font,
+                brush,
+                new System.Drawing.RectangleF(0, textY, PinterestTargetWidth, size.Height),
+                format);
+        }
+
+        private static float FitFontSize(
+            System.Drawing.Graphics graphics,
+            string text,
+            float baseSize,
+            float maxWidth)
+        {
+            using var font = new System.Drawing.Font(
+                "Arial",
+                baseSize,
+                System.Drawing.FontStyle.Bold,
+                System.Drawing.GraphicsUnit.Pixel);
+
+            var size = graphics.MeasureString(text, font);
+            if (size.Width <= maxWidth)
+                return baseSize;
+
+            float scale = maxWidth / size.Width;
+            return baseSize * scale;
         }
 
         private static List<System.Drawing.Image> ExtractImages(string pdfPath)
