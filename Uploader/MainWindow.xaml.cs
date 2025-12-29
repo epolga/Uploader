@@ -80,6 +80,8 @@ namespace Uploader
         private const int PinterestTargetWidth = 1000;
         private const int PinterestTargetHeight = 1500;
         private const string PinterestWatermarkText = "cross-stitch.com";
+        private const string PinterestWatermarkFontFamily = "Arial Black";
+        private const float PinterestWatermarkMinFontSize = 24f;
         private const string UserEmailSubject = "❌🪡❌🪡❌ Blue Bolt Buddy PDF is ready! 🔵";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
@@ -2691,17 +2693,22 @@ namespace Uploader
                 return;
 
             float margin = Math.Max(12f, bottomSpace * 0.12f);
-            float fontSize = Math.Min(PinterestTargetWidth / 16f, bottomSpace - margin);
-            if (fontSize < 18f)
+            float fontSize = Math.Min(PinterestTargetWidth / 12f, bottomSpace - margin);
+            if (fontSize < PinterestWatermarkMinFontSize)
                 return;
 
             float maxWidth = PinterestTargetWidth - (margin * 2f);
-            float fittedFontSize = FitFontSize(graphics, PinterestWatermarkText, fontSize, maxWidth);
-            if (fittedFontSize < 18f)
+            float fittedFontSize = FitFontSize(
+                graphics,
+                PinterestWatermarkText,
+                PinterestWatermarkFontFamily,
+                fontSize,
+                maxWidth);
+            if (fittedFontSize < PinterestWatermarkMinFontSize)
                 return;
 
             using var font = new System.Drawing.Font(
-                "Arial",
+                PinterestWatermarkFontFamily,
                 fittedFontSize,
                 System.Drawing.FontStyle.Bold,
                 System.Drawing.GraphicsUnit.Pixel);
@@ -2729,11 +2736,12 @@ namespace Uploader
         private static float FitFontSize(
             System.Drawing.Graphics graphics,
             string text,
+            string fontFamily,
             float baseSize,
             float maxWidth)
         {
             using var font = new System.Drawing.Font(
-                "Arial",
+                fontFamily,
                 baseSize,
                 System.Drawing.FontStyle.Bold,
                 System.Drawing.GraphicsUnit.Pixel);
