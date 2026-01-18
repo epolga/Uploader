@@ -82,7 +82,7 @@ namespace Uploader
         private const string PinterestWatermarkText = "cross-stitch.com";
         private const string PinterestWatermarkFontFamily = "Arial Black";
         private const float PinterestWatermarkMinFontSize = 24f;
-        private const string UserEmailSubject = "❌🪡❌🪡❌ Blue Bolt Buddy PDF is ready! 🔵";
+        private const string UserEmailSubject = "New Puppy Design";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
@@ -561,17 +561,14 @@ namespace Uploader
             if (PatternInfo == null)
                 throw new InvalidOperationException("PatternInfo must be set before sending emails.");
 
-            var albumSuggestions = await FetchAlbumSuggestionsAsync(4).ConfigureAwait(false);
-
-            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID, albumSuggestions)
+            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID)
                 .ConfigureAwait(false);
 
             var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
             await SendNotificationMailToUsersAsync(
                     PatternInfo.DesignID,
                     PatternInfo.PinID,
-                    userRecipients,
-                    albumSuggestions)
+                    userRecipients)
                 .ConfigureAwait(false);
         }
 
@@ -1052,8 +1049,7 @@ namespace Uploader
 
         private async Task SendNotificationMailToAdminAsync(
             int designId,
-            string pinId,
-            IReadOnlyList<AlbumInfo> albumSuggestions)
+            string pinId)
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
@@ -1069,8 +1065,6 @@ namespace Uploader
                 : PatternInfo.Title;
             string unsubscribeUrl = BuildUnsubscribeUrl(admin);
             var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-            string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
-            string albumText = BuildAlbumSuggestionsText(albumSuggestions);
 
             string htmlBody =
                 $"<p>The upload for album {_albumId} design {designId} was successful.</p>" +
@@ -1078,12 +1072,10 @@ namespace Uploader
                 $"<img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"/>" +
                 $"</a></p>" +
                 $"<p>Pin ID: {pinId}</p>" +
-                albumHtml +
                 $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
             string textBody =
                 $"The upload for album {_albumId} design {designId} ({PatternInfo.Title}) pinId {pinId} was successful."
-                + albumText
                 + $"\r\nUnsubscribe: {unsubscribeUrl}";
 
             await _emailHelper.SendEmailAsync(
@@ -1778,7 +1770,7 @@ namespace Uploader
             return recipients;
         }
 
-        private async Task SendAdminUserStyleEmailAsync(IReadOnlyList<AlbumInfo> albumSuggestions)
+        private async Task SendAdminUserStyleEmailAsync()
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
@@ -1803,8 +1795,6 @@ namespace Uploader
             string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
             string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
             string imageUrlForEmail = imageUrl;
-            string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
-            string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
 
             string unsubscribeUrl = BuildUnsubscribeUrl(admin);
             var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
@@ -1812,8 +1802,8 @@ namespace Uploader
             string greetingHtml = BuildUserGreetingHtml("admin");
             string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
             string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlForEmail, siteUrlWithTracking, facebookUrl, altText);
-            string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
-            string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+            string userText = greetingText + userBaseTextBody + $"\r\nUnsubscribe: {unsubscribeUrl}";
+            string userHtml = greetingHtml + userBaseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
             await _emailHelper.SendEmailAsync(
                 _sesClient,
@@ -1828,8 +1818,7 @@ namespace Uploader
         private async Task SendNotificationMailToUsersAsync(
             int designId,
             string pinId,
-            List<UserRecipient> userRecipients,
-            IReadOnlyList<AlbumInfo> albumSuggestions)
+            List<UserRecipient> userRecipients)
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
@@ -1858,15 +1847,13 @@ namespace Uploader
             string siteUrlWithUtm = AppendUtmParameters(siteUrl);
             string baseTextBody = BuildUserBaseTextBody(patternUrlWithUtm, siteUrlWithUtm, facebookUrl);
             string baseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithUtm, imageUrl, siteUrlWithUtm, facebookUrl, altText);
-            string albumHtml = BuildAlbumSuggestionsHtml(albumSuggestions);
-            string albumText = BuildAlbumSuggestionsText(albumSuggestions);
 
             // Send the same email to admin first.
             if (!string.IsNullOrEmpty(admin))
             {
                 string adminUnsubUrl = BuildUnsubscribeUrl(admin);
                 var adminHeaders = BuildUnsubscribeHeaders(adminUnsubUrl, sender);
-                string adminTextBody = baseTextBody + albumText + $"\r\nUnsubscribe: {adminUnsubUrl}";
+                string adminTextBody = baseTextBody + $"\r\nUnsubscribe: {adminUnsubUrl}";
                 string adminHtmlBody = baseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{adminUnsubUrl}\">unsubscribe</a>.</p>";
 
                 await _emailHelper.SendEmailAsync(
@@ -1906,7 +1893,6 @@ namespace Uploader
                 imageUrl,
                 facebookUrl,
                 altText,
-                albumSuggestions,
                 eid,
                 totalUserCount,
                 true,
@@ -2234,7 +2220,6 @@ namespace Uploader
             string imageUrl,
             string facebookUrl,
             string altText,
-            IReadOnlyList<AlbumInfo> albumSuggestions,
             string eid,
             int totalCount,
             bool updateLastEmailDate,
@@ -2260,8 +2245,6 @@ namespace Uploader
                 string cid = recipient.Cid ?? string.Empty;
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
                 string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
-                string userAlbumHtml = BuildAlbumSuggestionsHtml(albumSuggestions, cid, eid);
-                string userAlbumText = BuildAlbumSuggestionsText(albumSuggestions, cid, eid);
 
                 string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
@@ -2269,8 +2252,8 @@ namespace Uploader
                 string greetingHtml = BuildUserGreetingHtml(recipient.FirstName);
                 string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
                 string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrl, siteUrlWithTracking, facebookUrl, altText);
-                string userText = greetingText + userBaseTextBody + userAlbumText + $"\r\nUnsubscribe: {unsubscribeUrl}";
-                string userHtml = greetingHtml + userBaseHtmlBody + userAlbumHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+                string userText = greetingText + userBaseTextBody + $"\r\nUnsubscribe: {unsubscribeUrl}";
+                string userHtml = greetingHtml + userBaseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -2325,8 +2308,8 @@ namespace Uploader
 
         private static string BuildUserGreetingText(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
-                ? $"Hi {firstName},\r\n\r\n"
-                : "Hi,\r\n\r\n";
+                ? $"Hi {firstName},\r\n"
+                : "Hi,\r\n";
 
         private static string BuildUserGreetingHtml(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
@@ -2334,21 +2317,19 @@ namespace Uploader
                 : "<p>Hi,</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "I just wanted to send a quick note! The PDF cross-stitch pattern for the Blue Bolt Buddy is finished and has been uploaded to the site. I think you'll really enjoy stitching this fun, little alien. I always love seeing what everyone creates.\r\n\r\n" +
-            "You can download the pattern right here:\r\n" +
+            "I hope you are well. I have completed another cross-stitch design featuring the artist puppy.\r\n\r\n" +
             $"{viewAndDownloadUrl}\r\n\r\n" +
-            "Happy Stitching,\r\n" +
-            $"Visit {siteRootUrl} to explore more patterns and see what I'm uploading next.\r\n" +
-            $"Join me on Facebook: {facebookLink} - I'd love to connect.";
+            "I would appreciate your thoughts on this design.\r\n\r\n" +
+            "Best regards,\r\n" +
+            "Ann";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>I just wanted to send a quick note! The PDF cross-stitch pattern for the Blue Bolt Buddy is finished and has been uploaded to the site. I think you'll really enjoy stitching this fun, little alien. I always love seeing what everyone creates.</p>" +
-            "<p>You can download the pattern right here:</p>" +
+            "<p>I hope you are well. I have completed another cross-stitch design featuring the artist puppy.</p>" +
+            $"<p><a href=\"{viewAndDownloadUrl}\">View the design</a></p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"></a></p>" +
-            $"<p><a href=\"{viewAndDownloadUrl}\">Download the pattern here</a></p>" +
-            "<p>Happy Stitching,</p>" +
-            $"<p>Visit <a href=\"{siteRootUrl}\">{siteRootUrl}</a> to explore more patterns and see what I'm uploading next.</p>" +
-            $"<p>Join me on Facebook: <a href=\"{facebookLink}\">Ann Cross Stitch</a>. I'd love to connect.</p>";
+            "<p>I would appreciate your thoughts on this design.</p>" +
+            "<p>Best regards,</p>" +
+            "<p>Ann</p>";
 
         private static List<string> ReadSuppressedEmails(string filePath)
         {
@@ -3036,8 +3017,7 @@ namespace Uploader
             txtStatus.Text += "Sending user-style email to admin (1 email)...\r\n";
             try
             {
-                var albumSuggestions = await FetchAlbumSuggestionsAsync(4).ConfigureAwait(false);
-                await SendAdminUserStyleEmailAsync(albumSuggestions).ConfigureAwait(false);
+                await SendAdminUserStyleEmailAsync().ConfigureAwait(false);
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
