@@ -385,6 +385,23 @@ namespace Uploader
             }
         }
 
+        private async void InitializeUserSubscriptions_Click(object sender, RoutedEventArgs e)
+        {
+            txtStatus.Text = "Initializing user subscription fields...\r\n";
+
+            try
+            {
+                await InitializeUserSubscriptionFieldsAsync();
+                txtStatus.Text += "Finished initializing user subscription fields.\r\n";
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text += $"Error: {ex.Message}\r\n";
+                MessageBox.Show(ex.ToString(), "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private async void InitializeUserCid_Click(object sender, RoutedEventArgs e)
         {
 
@@ -2600,6 +2617,121 @@ namespace Uploader
             {
                 txtStatus.Text +=
                     $"[Verify] Done. Updated {updatedCount}, skipped {skippedCount}, missing CreatedAt {missingCreatedAtCount}, errors {errors}. Total time {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
+            }));
+        }
+
+        private async Task InitializeUserSubscriptionFieldsAsync()
+        {
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+            const string subscriptionStartedAtField = "SubscriptionStartedAt";
+            const string subscriptionActiveField = "SubscriptionActive";
+            string todayDate = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+            int scannedCount = 0;
+            int updatedCount = 0;
+            int errors = 0;
+            int totalCount = await CountUsersAsync(usersTable).ConfigureAwait(false);
+            var stopwatch = Stopwatch.StartNew();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text +=
+                    $"[Subscription] Using fields {subscriptionStartedAtField} and {subscriptionActiveField}. Setting date to {todayDate} for all users ({totalCount} total).\r\n";
+            }));
+
+            var scanRequest = new ScanRequest
+            {
+                TableName = usersTable,
+                ProjectionExpression = "ID"
+            };
+
+            Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+
+            do
+            {
+                scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                foreach (var item in response.Items)
+                {
+                    scannedCount++;
+
+                    if (!item.TryGetValue("ID", out var idAttr))
+                        continue;
+
+                    var updateRequest = new UpdateItemRequest
+                    {
+                        TableName = usersTable,
+                        Key = new Dictionary<string, AttributeValue>
+                        {
+                            { "ID", idAttr }
+                        },
+                        UpdateExpression = "SET #startedAt = :startedAt, #active = :active",
+                        ExpressionAttributeNames = new Dictionary<string, string>
+                        {
+                            { "#startedAt", subscriptionStartedAtField },
+                            { "#active", subscriptionActiveField }
+                        },
+                        ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                        {
+                            { ":startedAt", new AttributeValue { S = todayDate } },
+                            { ":active", new AttributeValue { BOOL = true } }
+                        }
+                    };
+
+                    try
+                    {
+                        await _dynamoDbClient.UpdateItemAsync(updateRequest).ConfigureAwait(false);
+                        updatedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        errors++;
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            txtStatus.Text += $"[Subscription] Failed to update {idAttr.S}: {ex.Message}\r\n";
+                        }));
+                    }
+
+                    if (scannedCount % 50 == 0)
+                    {
+                        int remaining = totalCount > 0
+                            ? Math.Max(totalCount - scannedCount, 0)
+                            : -1;
+
+                        double avgSeconds = scannedCount > 0
+                            ? stopwatch.Elapsed.TotalSeconds / scannedCount
+                            : 0;
+
+                        TimeSpan eta = avgSeconds > 0 && remaining >= 0
+                            ? TimeSpan.FromSeconds(avgSeconds * remaining)
+                            : TimeSpan.Zero;
+
+                        double percentRemaining = totalCount > 0
+                            ? (remaining * 100.0 / totalCount)
+                            : 0;
+
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            string remainingText = remaining >= 0
+                                ? $"{remaining} remaining ({percentRemaining:F1}% left)"
+                                : "remaining: unknown";
+
+                            txtStatus.Text +=
+                                $"[Subscription] Scanned {scannedCount}, updated {updatedCount}, errors {errors}. Elapsed {stopwatch.Elapsed:hh\\:mm\\:ss}, ETA {eta:hh\\:mm\\:ss}, {remainingText}.\r\n";
+                        }));
+                    }
+                }
+
+                lastEvaluatedKey = response.LastEvaluatedKey;
+            } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+            stopwatch.Stop();
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                txtStatus.Text +=
+                    $"[Subscription] Done. Scanned {scannedCount}, updated {updatedCount}, errors {errors}. Total time {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
             }));
         }
 

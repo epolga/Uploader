@@ -101,6 +101,11 @@
                             Height="26"
                             Margin="10"
                             Click="InitializeUserUnsubscribe_Click" />
+                    <Button Content="Initialize User Subscriptions"
+                            Width="220"
+                            Height="26"
+                            Margin="10"
+                            Click="InitializeUserSubscriptions_Click" />
                 </WrapPanel>
             </Expander>
 
