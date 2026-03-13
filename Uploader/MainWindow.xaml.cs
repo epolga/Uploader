@@ -67,13 +67,13 @@ namespace Uploader
         private bool _isSendingEmails;
         private bool _isSendingTextEmails;
 
-        private const string TextEmailSubjectDefault = "❌🪡❌🪡❌ New website address 🧵";
+        private const string TextEmailSubjectDefault = "My New Bunny Design – Feedback Welcome";
         private const string TextEmailBodyDefault =
-            "Hello <username>,\r\n" +
-            "I'm writing to let you know that my site has moved to a new address: https://cross-stitch.com\r\n" +
-            "If you have a bookmark saved, please update it.\r\n\r\n" +
-            "Everything works the same as before.\r\n" +
-            "Warm regards,\r\n" +
+            "Dear <username>,\r\n\r\n" +
+            "I am excited to share my latest cross-stitch design featuring an adorable bunny! " +
+            "I would love to hear your thoughts and any feedback you may have.\r\n\r\n" +
+            "Thank you for your support and input.\r\n\r\n" +
+            "Best regards,\r\n" +
             "Ann";
         private const string PhotoPrefix = "photos";
         private const string PinterestPhotoFileName = "4_pinterest.jpg";
@@ -82,7 +82,7 @@ namespace Uploader
         private const string PinterestWatermarkText = "cross-stitch.com";
         private const string PinterestWatermarkFontFamily = "Arial Black";
         private const float PinterestWatermarkMinFontSize = 24f;
-        private const string UserEmailSubject = "Unveiling Cuteness: Check Out My Adorable Panda Design! 🐼✨";
+        private const string UserEmailSubject = "My New Bunny Design – Feedback Welcome";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
@@ -614,15 +614,12 @@ namespace Uploader
 
             if (!string.IsNullOrWhiteSpace(admin))
             {
-                string? adminToken = FindUnsubscribeTokenForEmail(userRecipients, admin);
-                string adminUnsubUrl = BuildUnsubscribeUrl(admin, adminToken);
-                var adminHeaders = BuildUnsubscribeHeaders(adminUnsubUrl, sender);
                 string adminBaseText = PersonalizeTextTemplate(baseTextBody, null);
                 string adminBaseHtml = PersonalizeHtmlTemplate(baseHtmlBody, null);
-                string adminTextBody = adminBaseText + $"\r\n\r\nUnsubscribe: {adminUnsubUrl}";
+                string adminTextBody = adminBaseText;
                 string? adminHtmlBody = string.IsNullOrWhiteSpace(adminBaseHtml)
                     ? null
-                    : adminBaseHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{adminUnsubUrl}\">unsubscribe</a>.</p>";
+                    : adminBaseHtml;
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -630,8 +627,7 @@ namespace Uploader
                     new[] { admin },
                     subject,
                     adminTextBody,
-                    adminHtmlBody,
-                    adminHeaders).ConfigureAwait(false);
+                    adminHtmlBody).ConfigureAwait(false);
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -1081,20 +1077,15 @@ namespace Uploader
             string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
                 ? "New cross stitch pattern"
                 : PatternInfo.Title;
-            string unsubscribeUrl = BuildUnsubscribeUrl(admin);
-            var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-
             string htmlBody =
                 $"<p>The upload for album {_albumId} design {designId} was successful.</p>" +
                 $"<p><a href=\"{patternUrlWithUtm}\">" +
                 $"<img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"/>" +
                 $"</a></p>" +
-                $"<p>Pin ID: {pinId}</p>" +
-                $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+                $"<p>Pin ID: {pinId}</p>";
 
             string textBody =
-                $"The upload for album {_albumId} design {designId} ({PatternInfo.Title}) pinId {pinId} was successful."
-                + $"\r\nUnsubscribe: {unsubscribeUrl}";
+                $"The upload for album {_albumId} design {designId} ({PatternInfo.Title}) pinId {pinId} was successful.";
 
             await _emailHelper.SendEmailAsync(
                 _sesClient,
@@ -1102,8 +1093,7 @@ namespace Uploader
                 new[] { admin },
                 "Upload Successful",
                 textBody,
-                htmlBody,
-                unsubscribeHeaders).ConfigureAwait(false);
+                htmlBody).ConfigureAwait(false);
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -1838,14 +1828,12 @@ namespace Uploader
             string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
             string imageUrlForEmail = imageUrl;
 
-            string unsubscribeUrl = BuildUnsubscribeUrl(admin);
-            var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
             string greetingText = BuildUserGreetingText("admin");
             string greetingHtml = BuildUserGreetingHtml("admin");
             string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
             string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlForEmail, siteUrlWithTracking, facebookUrl, altText);
-            string userText = greetingText + userBaseTextBody + $"\r\nUnsubscribe: {unsubscribeUrl}";
-            string userHtml = greetingHtml + userBaseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+            string userText = greetingText + userBaseTextBody;
+            string userHtml = greetingHtml + userBaseHtmlBody;
 
             await _emailHelper.SendEmailAsync(
                 _sesClient,
@@ -1853,8 +1841,7 @@ namespace Uploader
                 new[] { admin },
                 subject,
                 userText,
-                userHtml,
-                unsubscribeHeaders).ConfigureAwait(false);
+                userHtml).ConfigureAwait(false);
         }
 
         private async Task SendNotificationMailToUsersAsync(
@@ -1893,11 +1880,8 @@ namespace Uploader
             // Send the same email to admin first.
             if (!string.IsNullOrEmpty(admin))
             {
-                string? adminToken = FindUnsubscribeTokenForEmail(userRecipients, admin);
-                string adminUnsubUrl = BuildUnsubscribeUrl(admin, adminToken);
-                var adminHeaders = BuildUnsubscribeHeaders(adminUnsubUrl, sender);
-                string adminTextBody = baseTextBody + $"\r\nUnsubscribe: {adminUnsubUrl}";
-                string adminHtmlBody = baseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{adminUnsubUrl}\">unsubscribe</a>.</p>";
+                string adminTextBody = baseTextBody;
+                string adminHtmlBody = baseHtmlBody;
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -1905,8 +1889,7 @@ namespace Uploader
                     new[] { admin },
                     subject,
                     adminTextBody,
-                    adminHtmlBody,
-                    adminHeaders).ConfigureAwait(false);
+                    adminHtmlBody).ConfigureAwait(false);
             }
 
             var recipients = userRecipients;
@@ -1996,38 +1979,89 @@ namespace Uploader
             return Path.GetFileName(_pinterestImageFilePath);
         }
 
-        private string BuildUnsubscribeUrl(string email, string? tokenOverride = null)
+        private async Task<string> GetStoredUnsubscribeTokenAsync(string email, IEnumerable<UserRecipient>? knownRecipients = null)
+        {
+            string? token = knownRecipients == null
+                ? null
+                : FindUnsubscribeTokenForEmail(knownRecipients, email);
+
+            if (!string.IsNullOrWhiteSpace(token))
+                return token;
+
+            string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
+            string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
+            const string unsubscribeTokenAttribute = "UnsubscribeToken";
+
+            var scanRequest = new ScanRequest
+            {
+                TableName = usersTable,
+                ProjectionExpression = $"{emailAttribute}, {unsubscribeTokenAttribute}"
+            };
+
+            Dictionary<string, AttributeValue>? lastEvaluatedKey = null;
+            do
+            {
+                scanRequest.ExclusiveStartKey = lastEvaluatedKey;
+                var response = await _dynamoDbClient.ScanAsync(scanRequest).ConfigureAwait(false);
+
+                foreach (var item in response.Items)
+                {
+                    if (!item.TryGetValue(emailAttribute, out var emailAttr))
+                        continue;
+
+                    string? candidateEmail = null;
+                    if (!string.IsNullOrWhiteSpace(emailAttr.S))
+                    {
+                        candidateEmail = emailAttr.S.Trim();
+                    }
+                    else if (emailAttr.L != null && emailAttr.L.Count > 0)
+                    {
+                        candidateEmail = emailAttr.L
+                            .Select(entry => entry.S)
+                            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+                            ?.Trim();
+                    }
+
+                    if (!string.Equals(candidateEmail, email, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (item.TryGetValue(unsubscribeTokenAttribute, out var tokenAttr) &&
+                        !string.IsNullOrWhiteSpace(tokenAttr.S))
+                    {
+                        return tokenAttr.S.Trim();
+                    }
+
+                    throw new InvalidOperationException($"Unsubscribe token for {email} was not found in the database.");
+                }
+
+                lastEvaluatedKey = response.LastEvaluatedKey;
+            } while (lastEvaluatedKey != null && lastEvaluatedKey.Count > 0);
+
+            throw new InvalidOperationException($"User record for {email} was not found in the database.");
+        }
+
+        private string BuildUnsubscribeUrl(string token)
         {
             string configuredBaseUrl = ConfigurationManager.AppSettings["UnsubscribeBaseUrl"];
             string baseUrl = !string.IsNullOrWhiteSpace(configuredBaseUrl)
                 ? configuredBaseUrl.TrimEnd('/')
                 : $"{_linkHelper.SiteBaseUrl}/unsubscribe";
-            string token;
-            if (!string.IsNullOrWhiteSpace(tokenOverride))
-            {
-                token = tokenOverride;
-            }
-            else
-            {
-                string secret = ConfigurationManager.AppSettings["UnsubscribeSecret"] ??
-                                "change-me-secret-for-unsubscribe-hmac";
-                token = BuildUnsubscribeToken(email, secret);
-            }
 
             return $"{baseUrl}?token={Uri.EscapeDataString(token)}";
+        }
+
+        private string BuildUnsubscribeUrlFromStoredToken(string email, string? token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                throw new InvalidOperationException($"Unsubscribe token for {email} was not found in the database.");
+
+            return BuildUnsubscribeUrl(token);
         }
 
         private static string? FindUnsubscribeTokenForEmail(IEnumerable<UserRecipient> recipients, string email) =>
             recipients
                 .FirstOrDefault(r => string.Equals(r.Email, email, StringComparison.OrdinalIgnoreCase))
                 ?.UnsubscribeToken;
-
-        private static string BuildUnsubscribeToken(string email, string secret)
-        {
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-            byte[] hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(email));
-            return ToBase64Url(hash);
-        }
 
         /// <summary>
         /// Generates a cryptographically secure random token
@@ -2164,7 +2198,7 @@ namespace Uploader
             if (string.IsNullOrWhiteSpace(template))
                 return string.Empty;
 
-            string name = string.IsNullOrWhiteSpace(firstName) ? "friend" : firstName.Trim();
+            string name = string.IsNullOrWhiteSpace(firstName) ? "[Recipient's Name]" : firstName.Trim();
             return template.Replace("<username>", name);
         }
 
@@ -2173,7 +2207,7 @@ namespace Uploader
             if (string.IsNullOrWhiteSpace(template))
                 return string.Empty;
 
-            string name = string.IsNullOrWhiteSpace(firstName) ? "friend" : firstName.Trim();
+            string name = string.IsNullOrWhiteSpace(firstName) ? "[Recipient's Name]" : firstName.Trim();
             string encodedName = WebUtility.HtmlEncode(name);
             return template
                 .Replace("&lt;username&gt;", encodedName)
@@ -2207,7 +2241,7 @@ namespace Uploader
 
             foreach (var recipient in recipients)
             {
-                string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email, recipient.UnsubscribeToken);
+                string unsubscribeUrl = BuildUnsubscribeUrlFromStoredToken(recipient.Email, recipient.UnsubscribeToken);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
                 string personalizedText = PersonalizeTextTemplate(baseTextBody, recipient.FirstName);
                 string personalizedHtml = PersonalizeHtmlTemplate(baseHtmlBody, recipient.FirstName);
@@ -2301,7 +2335,7 @@ namespace Uploader
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
                 string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
 
-                string unsubscribeUrl = BuildUnsubscribeUrl(recipient.Email, recipient.UnsubscribeToken);
+                string unsubscribeUrl = BuildUnsubscribeUrlFromStoredToken(recipient.Email, recipient.UnsubscribeToken);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
                 string greetingText = BuildUserGreetingText(recipient.FirstName);
                 string greetingHtml = BuildUserGreetingHtml(recipient.FirstName);
@@ -2363,29 +2397,26 @@ namespace Uploader
 
         private static string BuildUserGreetingText(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
-                ? $"Hi {firstName},\r\n"
-                : "Hi,\r\n";
+                ? $"Dear {firstName},\r\n"
+                : "Dear [Recipient's Name],\r\n";
 
         private static string BuildUserGreetingHtml(string? firstName) =>
             !string.IsNullOrWhiteSpace(firstName)
-                ? $"<p>Hi {WebUtility.HtmlEncode(firstName)},</p>"
-                : "<p>Hi,</p>";
+                ? $"<p>Dear {WebUtility.HtmlEncode(firstName)},</p>"
+                : "<p>Dear [Recipient&apos;s Name],</p>";
 
         private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "I hope you're having a wonderful day! I'm excited to share my latest cross-stitch design with you-a delightful panda surrounded by colorful butterflies and blooming flowers. This piece captures the whimsy and charm of nature in a truly heartwarming way.\r\n\r\n" +
-            $"View the design here: {viewAndDownloadUrl}\r\n\r\n" +
-            "I would be grateful to know what you think about this design! Your insights and thoughts are always appreciated and help me create even more joyful pieces.\r\n\r\n" +
-            "Eagerly awaiting your feedback!\r\n\r\n" +
-            "Warm regards,\r\n" +
+            "I am excited to share my latest cross-stitch design featuring an adorable bunny! " +
+            "I would love to hear your thoughts and any feedback you may have.\r\n\r\n" +
+            "Thank you for your support and input.\r\n\r\n" +
+            "Best regards,\r\n" +
             "Ann";
 
         private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>I hope you're having a wonderful day! I'm excited to share my latest cross-stitch design with you-a delightful panda surrounded by colorful butterflies and blooming flowers. This piece captures the whimsy and charm of nature in a truly heartwarming way.</p>" +
+            "<p>I am excited to share my latest cross-stitch design featuring an adorable bunny! I would love to hear your thoughts and any feedback you may have.</p>" +
             $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:100px; max-height:100px; width:auto; height:auto; border:0; display:block;\" /></a></p>" +
-            $"<p><a href=\"{viewAndDownloadUrl}\">View the design</a></p>" +
-            "<p>I would be grateful to know what you think about this design! Your insights and thoughts are always appreciated and help me create even more joyful pieces.</p>" +
-            "<p>Eagerly awaiting your feedback!</p>" +
-            "<p>Warm regards,</p>" +
+            "<p>Thank you for your support and input.</p>" +
+            "<p>Best regards,</p>" +
             "<p>Ann</p>";
 
         private static List<string> ReadSuppressedEmails(string filePath)
