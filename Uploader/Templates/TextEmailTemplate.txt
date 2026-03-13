@@ -1,0 +1,21 @@
+[Subject]
+My New Bunny Design - Feedback Welcome
+
+[Greeting]
+Dear <username>,
+
+[BeforeBody]
+I am excited to share my latest cross-stitch design featuring an adorable bunny.
+
+[AfterBody]
+I would love to hear your thoughts and any feedback you may have.
+
+[Unsubscribe]
+If you prefer not to receive these emails, you can unsubscribe here:
+<unsubscribe_url>
+
+[Closing]
+Best regards,
+
+[Signature]
+Ann

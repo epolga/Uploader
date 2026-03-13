@@ -67,14 +67,6 @@ namespace Uploader
         private bool _isSendingEmails;
         private bool _isSendingTextEmails;
 
-        private const string TextEmailSubjectDefault = "My New Bunny Design – Feedback Welcome";
-        private const string TextEmailBodyDefault =
-            "Dear <username>,\r\n\r\n" +
-            "I am excited to share my latest cross-stitch design featuring an adorable bunny! " +
-            "I would love to hear your thoughts and any feedback you may have.\r\n\r\n" +
-            "Thank you for your support and input.\r\n\r\n" +
-            "Best regards,\r\n" +
-            "Ann";
         private const string PhotoPrefix = "photos";
         private const string PinterestPhotoFileName = "4_pinterest.jpg";
         private const int PinterestTargetWidth = 1000;
@@ -82,10 +74,15 @@ namespace Uploader
         private const string PinterestWatermarkText = "cross-stitch.com";
         private const string PinterestWatermarkFontFamily = "Arial Black";
         private const float PinterestWatermarkMinFontSize = 24f;
-        private const string UserEmailSubject = "My New Bunny Design – Feedback Welcome";
+        private const string HtmlEmailTemplatePathDefault = "Templates\\HtmlEmailTemplate.txt";
+        private const string TextEmailTemplatePathDefault = "Templates\\TextEmailTemplate.txt";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
+        private static readonly string[] HtmlEmailTemplateRequiredSections =
+            { "Subject", "Greeting", "BeforeImage", "ImageWithLink", "AfterImage", "Unsubscribe", "Closing", "Signature" };
+        private static readonly string[] TextEmailTemplateRequiredSections =
+            { "Subject", "Greeting", "BeforeBody", "AfterBody", "Unsubscribe", "Closing", "Signature" };
         private int _albumId;
 
         public PatternInfo? PatternInfo { get; private set; }
@@ -192,18 +189,6 @@ namespace Uploader
 
         private async void BtnSendEmails_Click(object sender, RoutedEventArgs e)
         {
-            if (PatternInfo == null)
-            {
-                txtStatus.Text += "[Email] Upload a pattern before sending emails.\r\n";
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(PatternInfo.PinID))
-            {
-                txtStatus.Text += "[Email] Pinterest pin is missing; complete upload first.\r\n";
-                return;
-            }
-
             if (_isSendingEmails)
             {
                 txtStatus.Text += "[Email] Send already in progress.\r\n";
@@ -575,16 +560,15 @@ namespace Uploader
 
         private async Task SendNotificationEmailsAsync()
         {
-            if (PatternInfo == null)
-                throw new InvalidOperationException("PatternInfo must be set before sending emails.");
-
-            await SendNotificationMailToAdminAsync(PatternInfo.DesignID, PatternInfo.PinID)
+            LatestDesignEmailInfo latestDesign = await GetLatestDesignEmailInfoAsync(requirePinId: true)
                 .ConfigureAwait(false);
 
-           var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
+            await SendNotificationMailToAdminAsync(latestDesign)
+                .ConfigureAwait(false);
+
+            var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
             await SendNotificationMailToUsersAsync(
-                    PatternInfo.DesignID,
-                    PatternInfo.PinID,
+                    latestDesign,
                     userRecipients)
                 .ConfigureAwait(false);
         }
@@ -598,36 +582,24 @@ namespace Uploader
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
             string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
             string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
-
-            string subject = ConfigurationManager.AppSettings["TextEmailSubject"] ?? TextEmailSubjectDefault;
-            string baseTextBody = ConfigurationManager.AppSettings["TextEmailBody"] ?? TextEmailBodyDefault;
-            string baseHtmlBody = ConvertPlainTextToHtml(baseTextBody);
+            EmailTemplateDefinition template = LoadTextEmailTemplate();
 
             if (string.IsNullOrWhiteSpace(sender))
                 throw new InvalidOperationException("SenderEmail is not configured.");
-            if (string.IsNullOrWhiteSpace(subject))
-                throw new InvalidOperationException("Text email subject is empty.");
-            if (string.IsNullOrWhiteSpace(baseTextBody))
-                throw new InvalidOperationException("Text email body is empty.");
 
             var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(admin))
             {
-                string adminBaseText = PersonalizeTextTemplate(baseTextBody, null);
-                string adminBaseHtml = PersonalizeHtmlTemplate(baseHtmlBody, null);
-                string adminTextBody = adminBaseText;
-                string? adminHtmlBody = string.IsNullOrWhiteSpace(adminBaseHtml)
-                    ? null
-                    : adminBaseHtml;
+                RenderedEmailContent adminContent = RenderTextEmailContent(template, null, null);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
                     sender,
                     new[] { admin },
-                    subject,
-                    adminTextBody,
-                    adminHtmlBody).ConfigureAwait(false);
+                    adminContent.Subject,
+                    adminContent.TextBody,
+                    adminContent.HtmlBody).ConfigureAwait(false);
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -636,7 +608,7 @@ namespace Uploader
             }
 
             var recipients = userRecipients;
-           
+
             if (!string.IsNullOrWhiteSpace(admin))
             {
                 recipients = userRecipients
@@ -666,10 +638,8 @@ namespace Uploader
             await SendTextEmailsWithProgressAsync(
                 "[TextEmail]",
                 recipients,
-                subject,
+                template,
                 sender,
-                baseTextBody,
-                baseHtmlBody,
                 totalUserCount,
                 usersTable,
                 emailAttribute,
@@ -765,6 +735,77 @@ namespace Uploader
             }
 
             return 1;
+        }
+
+        private async Task<LatestDesignEmailInfo> GetLatestDesignEmailInfoAsync(bool requirePinId = false)
+        {
+            var request = new QueryRequest
+            {
+                TableName = "CrossStitchItems",
+                IndexName = "DesignsByID-index",
+                KeyConditionExpression = "EntityType = :et",
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                {
+                    { ":et", new AttributeValue { S = "DESIGN" } }
+                },
+                ScanIndexForward = false,
+                Limit = 1,
+                ProjectionExpression = "DesignID, AlbumID, NPage, Caption, PinID"
+            };
+
+            var response = await _dynamoDbClient.QueryAsync(request).ConfigureAwait(false);
+            if (response.Items.Count == 0)
+                throw new InvalidOperationException("No design records were found in DynamoDB.");
+
+            var item = response.Items[0];
+            int designId = ParseRequiredIntAttribute(item, "DesignID");
+            int albumId = ParseRequiredIntAttribute(item, "AlbumID");
+            string nPage = GetAttributeStringValue(item, "NPage");
+            if (string.IsNullOrWhiteSpace(nPage))
+                throw new InvalidOperationException("Latest design is missing NPage in DynamoDB.");
+
+            string title = GetAttributeStringValue(item, "Caption");
+            if (string.IsNullOrWhiteSpace(title))
+                title = $"Design {designId}";
+
+            string pinId = GetAttributeStringValue(item, "PinID");
+            if (requirePinId && string.IsNullOrWhiteSpace(pinId))
+            {
+                throw new InvalidOperationException(
+                    "Latest design is missing Pinterest PinID in DynamoDB; complete upload first.");
+            }
+
+            return new LatestDesignEmailInfo(designId, albumId, nPage, title, pinId);
+        }
+
+        private static int ParseRequiredIntAttribute(
+            IReadOnlyDictionary<string, AttributeValue> item,
+            string attributeName)
+        {
+            string rawValue = GetAttributeStringValue(item, attributeName);
+            if (!int.TryParse(rawValue, out int parsedValue))
+            {
+                throw new InvalidOperationException(
+                    $"Latest design attribute '{attributeName}' is missing or invalid in DynamoDB.");
+            }
+
+            return parsedValue;
+        }
+
+        private static string GetAttributeStringValue(
+            IReadOnlyDictionary<string, AttributeValue> item,
+            string attributeName)
+        {
+            if (!item.TryGetValue(attributeName, out var attributeValue) || attributeValue == null)
+                return string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(attributeValue.S))
+                return attributeValue.S.Trim();
+
+            if (!string.IsNullOrWhiteSpace(attributeValue.N))
+                return attributeValue.N.Trim();
+
+            return string.Empty;
         }
 
         private async Task UploadChartToS3Async(int designId, string sccFilePath)
@@ -1061,31 +1102,29 @@ namespace Uploader
             return sb.ToString();
         }
 
-        private async Task SendNotificationMailToAdminAsync(
-            int designId,
-            string pinId)
+        private async Task SendNotificationMailToAdminAsync(LatestDesignEmailInfo latestDesign)
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
 
-            if (string.IsNullOrEmpty(sender) || string.IsNullOrEmpty(admin) || PatternInfo == null)
+            if (string.IsNullOrEmpty(sender) || string.IsNullOrEmpty(admin))
                 return;
 
-            string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
-            string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
+            string patternUrl = BuildPatternUrl(latestDesign);
+            string imageUrl = _linkHelper.BuildImageUrl(latestDesign.DesignId, latestDesign.AlbumId);
             string patternUrlWithUtm = AppendUtmParameters(patternUrl);
-            string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
+            string altText = string.IsNullOrWhiteSpace(latestDesign.Title)
                 ? "New cross stitch pattern"
-                : PatternInfo.Title;
+                : latestDesign.Title;
             string htmlBody =
-                $"<p>The upload for album {_albumId} design {designId} was successful.</p>" +
+                $"<p>The upload for album {latestDesign.AlbumId} design {latestDesign.DesignId} was successful.</p>" +
                 $"<p><a href=\"{patternUrlWithUtm}\">" +
                 $"<img src=\"{imageUrl}\" alt=\"{altText}\" style=\"max-width:280px; max-height:280px; width:auto; height:auto; border:0;\"/>" +
                 $"</a></p>" +
-                $"<p>Pin ID: {pinId}</p>";
+                $"<p>Pin ID: {latestDesign.PinId}</p>";
 
             string textBody =
-                $"The upload for album {_albumId} design {designId} ({PatternInfo.Title}) pinId {pinId} was successful.";
+                $"The upload for album {latestDesign.AlbumId} design {latestDesign.DesignId} ({latestDesign.Title}) pinId {latestDesign.PinId} was successful.";
 
             await _emailHelper.SendEmailAsync(
                 _sesClient,
@@ -1520,6 +1559,61 @@ namespace Uploader
             public string? UnsubscribeToken { get; }
         }
 
+        private sealed class LatestDesignEmailInfo
+        {
+            public LatestDesignEmailInfo(int designId, int albumId, string nPage, string title, string? pinId)
+            {
+                DesignId = designId;
+                AlbumId = albumId;
+                NPage = nPage;
+                Title = title;
+                PinId = pinId ?? string.Empty;
+            }
+
+            public int DesignId { get; }
+            public int AlbumId { get; }
+            public string NPage { get; }
+            public string Title { get; }
+            public string PinId { get; }
+        }
+
+        private sealed class EmailTemplateDefinition
+        {
+            public EmailTemplateDefinition(string sourcePath, Dictionary<string, string> sections)
+            {
+                SourcePath = sourcePath;
+                Sections = sections;
+            }
+
+            public string SourcePath { get; }
+            public Dictionary<string, string> Sections { get; }
+
+            public string GetRequiredSection(string sectionName)
+            {
+                if (!Sections.TryGetValue(sectionName, out string? value) || string.IsNullOrWhiteSpace(value))
+                {
+                    throw new InvalidOperationException(
+                        $"Template section '{sectionName}' is missing or empty in {SourcePath}.");
+                }
+
+                return value;
+            }
+        }
+
+        private sealed class RenderedEmailContent
+        {
+            public RenderedEmailContent(string subject, string textBody, string? htmlBody)
+            {
+                Subject = subject;
+                TextBody = textBody;
+                HtmlBody = htmlBody;
+            }
+
+            public string Subject { get; }
+            public string TextBody { get; }
+            public string? HtmlBody { get; }
+        }
+
         private async Task<List<UserRecipient>> FetchAllUserEmailsAsync(bool onlyVerified = false, bool onlySubscribed = false)
         {
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
@@ -1584,7 +1678,7 @@ namespace Uploader
                                     email = entry.S.Trim();
                                 }
                             }
-                        } 
+                        }
 
                         if (string.IsNullOrWhiteSpace(email))
                             continue;
@@ -1806,47 +1900,40 @@ namespace Uploader
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
             string? admin = ConfigurationManager.AppSettings["AdminEmail"];
-            string facebookUrl = "https://www.facebook.com/AnnCrossStitch/";
 
-            if (PatternInfo == null || string.IsNullOrEmpty(sender) || string.IsNullOrEmpty(admin))
+            if (string.IsNullOrEmpty(sender) || string.IsNullOrEmpty(admin))
                 return;
 
-            int designId = PatternInfo.DesignID;
-            string subject = UserEmailSubject;
-            string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
-            string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
-            string siteUrl = patternUrl;
-            if (Uri.TryCreate(patternUrl, UriKind.Absolute, out var patternUri))
-                siteUrl = patternUri.GetLeftPart(UriPartial.Authority);
-            string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
+            LatestDesignEmailInfo latestDesign = await GetLatestDesignEmailInfoAsync().ConfigureAwait(false);
+            EmailTemplateDefinition template = LoadHtmlEmailTemplate();
+            string patternUrl = BuildPatternUrl(latestDesign);
+            string imageUrl = _linkHelper.BuildImageUrl(latestDesign.DesignId, latestDesign.AlbumId);
+            string altText = string.IsNullOrWhiteSpace(latestDesign.Title)
                 ? "New cross stitch pattern"
-                : PatternInfo.Title;
-            string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
-            string cid = "admin";
-
-            string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
-            string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
-            string imageUrlForEmail = imageUrl;
-
-            string greetingText = BuildUserGreetingText("admin");
-            string greetingHtml = BuildUserGreetingHtml("admin");
-            string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
-            string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrlForEmail, siteUrlWithTracking, facebookUrl, altText);
-            string userText = greetingText + userBaseTextBody;
-            string userHtml = greetingHtml + userBaseHtmlBody;
+                : latestDesign.Title;
+            string patternUrlWithTracking = AppendTrackingParameters(
+                patternUrl,
+                "admin",
+                DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture));
+            RenderedEmailContent content = RenderHtmlEmailContent(
+                template,
+                "admin",
+                patternUrlWithTracking,
+                imageUrl,
+                altText,
+                null);
 
             await _emailHelper.SendEmailAsync(
                 _sesClient,
                 sender,
                 new[] { admin },
-                subject,
-                userText,
-                userHtml).ConfigureAwait(false);
+                content.Subject,
+                content.TextBody,
+                content.HtmlBody).ConfigureAwait(false);
         }
 
         private async Task SendNotificationMailToUsersAsync(
-            int designId,
-            string pinId,
+            LatestDesignEmailInfo latestDesign,
             List<UserRecipient> userRecipients)
         {
             string? sender = ConfigurationManager.AppSettings["SenderEmail"];
@@ -1856,40 +1943,36 @@ namespace Uploader
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
             string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
             string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
-            string facebookUrl = "https://www.facebook.com/AnnCrossStitch/";
+            EmailTemplateDefinition template = LoadHtmlEmailTemplate();
 
-            if (PatternInfo == null || string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
+            if (string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
 
-            string subject = UserEmailSubject;
-            string patternUrl = _linkHelper.BuildPatternUrl(PatternInfo);
-            string imageUrl = _linkHelper.BuildImageUrl(designId, _albumId);
-            string siteUrl = patternUrl;
-            if (Uri.TryCreate(patternUrl, UriKind.Absolute, out var patternUri))
-                siteUrl = patternUri.GetLeftPart(UriPartial.Authority);
-            string altText = string.IsNullOrWhiteSpace(PatternInfo.Title)
+            string patternUrl = BuildPatternUrl(latestDesign);
+            string imageUrl = _linkHelper.BuildImageUrl(latestDesign.DesignId, latestDesign.AlbumId);
+            string altText = string.IsNullOrWhiteSpace(latestDesign.Title)
                 ? "New cross stitch pattern"
-                : PatternInfo.Title;
+                : latestDesign.Title;
             string eid = DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture);
-
-            string patternUrlWithUtm = AppendUtmParameters(patternUrl);
-            string siteUrlWithUtm = AppendUtmParameters(siteUrl);
-            string baseTextBody = BuildUserBaseTextBody(patternUrlWithUtm, siteUrlWithUtm, facebookUrl);
-            string baseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithUtm, imageUrl, siteUrlWithUtm, facebookUrl, altText);
 
             // Send the same email to admin first.
             if (!string.IsNullOrEmpty(admin))
             {
-                string adminTextBody = baseTextBody;
-                string adminHtmlBody = baseHtmlBody;
+                RenderedEmailContent adminContent = RenderHtmlEmailContent(
+                    template,
+                    null,
+                    AppendUtmParameters(patternUrl),
+                    imageUrl,
+                    altText,
+                    null);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
                     sender,
                     new[] { admin },
-                    subject,
-                    adminTextBody,
-                    adminHtmlBody).ConfigureAwait(false);
+                    adminContent.Subject,
+                    adminContent.TextBody,
+                    adminContent.HtmlBody).ConfigureAwait(false);
             }
 
             var recipients = userRecipients;
@@ -1912,12 +1995,10 @@ namespace Uploader
             await SendEmailsWithProgressAsync(
                 "[CrossStitchUsers]",
                 recipients,
-                subject,
+                template,
                 sender,
                 patternUrl,
-                siteUrl,
                 imageUrl,
-                facebookUrl,
                 altText,
                 eid,
                 totalUserCount,
@@ -2193,34 +2274,11 @@ namespace Uploader
             return string.Join(string.Empty, htmlParagraphs.Select(p => $"<p>{p}</p>"));
         }
 
-        private static string PersonalizeTextTemplate(string template, string? firstName)
-        {
-            if (string.IsNullOrWhiteSpace(template))
-                return string.Empty;
-
-            string name = string.IsNullOrWhiteSpace(firstName) ? "[Recipient's Name]" : firstName.Trim();
-            return template.Replace("<username>", name);
-        }
-
-        private static string PersonalizeHtmlTemplate(string template, string? firstName)
-        {
-            if (string.IsNullOrWhiteSpace(template))
-                return string.Empty;
-
-            string name = string.IsNullOrWhiteSpace(firstName) ? "[Recipient's Name]" : firstName.Trim();
-            string encodedName = WebUtility.HtmlEncode(name);
-            return template
-                .Replace("&lt;username&gt;", encodedName)
-                .Replace("<username>", encodedName);
-        }
-
         private async Task SendTextEmailsWithProgressAsync(
             string label,
             List<UserRecipient> recipients,
-            string subject,
+            EmailTemplateDefinition template,
             string sender,
-            string baseTextBody,
-            string baseHtmlBody,
             int totalCount,
             string usersTable,
             string emailAttribute,
@@ -2243,21 +2301,15 @@ namespace Uploader
             {
                 string unsubscribeUrl = BuildUnsubscribeUrlFromStoredToken(recipient.Email, recipient.UnsubscribeToken);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-                string personalizedText = PersonalizeTextTemplate(baseTextBody, recipient.FirstName);
-                string personalizedHtml = PersonalizeHtmlTemplate(baseHtmlBody, recipient.FirstName);
-
-                string textBody = personalizedText + $"\r\n\r\nUnsubscribe: {unsubscribeUrl}";
-                string? htmlBody = string.IsNullOrWhiteSpace(personalizedHtml)
-                    ? null
-                    : personalizedHtml + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+                RenderedEmailContent content = RenderTextEmailContent(template, recipient.FirstName, unsubscribeUrl);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
                     sender,
                     new[] { recipient.Email },
-                    subject,
-                    textBody,
-                    htmlBody,
+                    content.Subject,
+                    content.TextBody,
+                    content.HtmlBody,
                     unsubscribeHeaders).ConfigureAwait(false);
 
                 try
@@ -2302,12 +2354,10 @@ namespace Uploader
         private async Task SendEmailsWithProgressAsync(
             string label,
             List<UserRecipient> recipients,
-            string subject,
+            EmailTemplateDefinition template,
             string sender,
             string patternUrl,
-            string siteUrl,
             string imageUrl,
-            string facebookUrl,
             string altText,
             string eid,
             int totalCount,
@@ -2333,24 +2383,24 @@ namespace Uploader
             {
                 string cid = recipient.Cid ?? string.Empty;
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
-                string siteUrlWithTracking = AppendTrackingParameters(siteUrl, cid, eid);
 
                 string unsubscribeUrl = BuildUnsubscribeUrlFromStoredToken(recipient.Email, recipient.UnsubscribeToken);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-                string greetingText = BuildUserGreetingText(recipient.FirstName);
-                string greetingHtml = BuildUserGreetingHtml(recipient.FirstName);
-                string userBaseTextBody = BuildUserBaseTextBody(patternUrlWithTracking, siteUrlWithTracking, facebookUrl);
-                string userBaseHtmlBody = BuildUserBaseHtmlBody(patternUrlWithTracking, imageUrl, siteUrlWithTracking, facebookUrl, altText);
-                string userText = greetingText + userBaseTextBody + $"\r\nUnsubscribe: {unsubscribeUrl}";
-                string userHtml = greetingHtml + userBaseHtmlBody + $"<p style=\"font-size:12px; color:#666;\">If you prefer not to receive these emails, <a href=\"{unsubscribeUrl}\">unsubscribe</a>.</p>";
+                RenderedEmailContent content = RenderHtmlEmailContent(
+                    template,
+                    recipient.FirstName,
+                    patternUrlWithTracking,
+                    imageUrl,
+                    altText,
+                    unsubscribeUrl);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
                     sender,
                     new[] { recipient.Email },
-                    subject,
-                    userText,
-                    userHtml,
+                    content.Subject,
+                    content.TextBody,
+                    content.HtmlBody,
                     unsubscribeHeaders).ConfigureAwait(false);
 
                 if (updateLastEmailDate)
@@ -2395,29 +2445,220 @@ namespace Uploader
             }));
         }
 
-        private static string BuildUserGreetingText(string? firstName) =>
-            !string.IsNullOrWhiteSpace(firstName)
-                ? $"Dear {firstName},\r\n"
-                : "Dear [Recipient's Name],\r\n";
+        private EmailTemplateDefinition LoadHtmlEmailTemplate() =>
+            LoadEmailTemplate(
+                "HtmlEmailTemplatePath",
+                HtmlEmailTemplatePathDefault,
+                HtmlEmailTemplateRequiredSections);
 
-        private static string BuildUserGreetingHtml(string? firstName) =>
-            !string.IsNullOrWhiteSpace(firstName)
-                ? $"<p>Dear {WebUtility.HtmlEncode(firstName)},</p>"
-                : "<p>Dear [Recipient&apos;s Name],</p>";
+        private EmailTemplateDefinition LoadTextEmailTemplate() =>
+            LoadEmailTemplate(
+                "TextEmailTemplatePath",
+                TextEmailTemplatePathDefault,
+                TextEmailTemplateRequiredSections);
 
-        private static string BuildUserBaseTextBody(string viewAndDownloadUrl, string siteRootUrl, string facebookLink) =>
-            "I am excited to share my latest cross-stitch design featuring an adorable bunny! " +
-            "I would love to hear your thoughts and any feedback you may have.\r\n\r\n" +
-            "Thank you for your support and input.\r\n\r\n" +
-            "Best regards,\r\n" +
-            "Ann";
+        private static RenderedEmailContent RenderTextEmailContent(
+            EmailTemplateDefinition template,
+            string? firstName,
+            string? unsubscribeUrl)
+        {
+            var replacements = CreateCommonTemplateReplacements(firstName);
+            if (!string.IsNullOrWhiteSpace(unsubscribeUrl))
+                replacements["<unsubscribe_url>"] = unsubscribeUrl;
 
-        private static string BuildUserBaseHtmlBody(string viewAndDownloadUrl, string imageSrcUrl, string siteRootUrl, string facebookLink, string alt) =>
-            "<p>I am excited to share my latest cross-stitch design featuring an adorable bunny! I would love to hear your thoughts and any feedback you may have.</p>" +
-            $"<p><a href=\"{viewAndDownloadUrl}\"><img src=\"{imageSrcUrl}\" alt=\"{WebUtility.HtmlEncode(alt)}\" style=\"max-width:100px; max-height:100px; width:auto; height:auto; border:0; display:block;\" /></a></p>" +
-            "<p>Thank you for your support and input.</p>" +
-            "<p>Best regards,</p>" +
-            "<p>Ann</p>";
+            string subject = ReplaceTemplateTokens(template.GetRequiredSection("Subject"), replacements);
+            string greeting = ReplaceTemplateTokens(template.GetRequiredSection("Greeting"), replacements);
+            string beforeBody = ReplaceTemplateTokens(template.GetRequiredSection("BeforeBody"), replacements);
+            string afterBody = ReplaceTemplateTokens(template.GetRequiredSection("AfterBody"), replacements);
+            string unsubscribe = RenderOptionalTemplateSection(template.GetRequiredSection("Unsubscribe"), replacements, unsubscribeUrl);
+            string closing = ReplaceTemplateTokens(template.GetRequiredSection("Closing"), replacements);
+            string signature = ReplaceTemplateTokens(template.GetRequiredSection("Signature"), replacements);
+
+            string textBody = JoinTextSections(greeting, beforeBody, afterBody, unsubscribe, closing, signature);
+            string htmlBody = JoinHtmlSections(greeting, beforeBody, afterBody, unsubscribe, closing, signature);
+            return new RenderedEmailContent(subject, textBody, htmlBody);
+        }
+
+        private static RenderedEmailContent RenderHtmlEmailContent(
+            EmailTemplateDefinition template,
+            string? firstName,
+            string patternUrl,
+            string imageUrl,
+            string altText,
+            string? unsubscribeUrl)
+        {
+            var replacements = CreateCommonTemplateReplacements(firstName);
+            replacements["<pattern_url>"] = patternUrl;
+            replacements["<image_url>"] = imageUrl;
+            replacements["<alt_text>"] = WebUtility.HtmlEncode(altText);
+            if (!string.IsNullOrWhiteSpace(unsubscribeUrl))
+                replacements["<unsubscribe_url>"] = unsubscribeUrl;
+
+            string subject = ReplaceTemplateTokens(template.GetRequiredSection("Subject"), replacements);
+            string greeting = ReplaceTemplateTokens(template.GetRequiredSection("Greeting"), replacements);
+            string beforeImage = ReplaceTemplateTokens(template.GetRequiredSection("BeforeImage"), replacements);
+            string imageWithLink = ReplaceTemplateTokens(template.GetRequiredSection("ImageWithLink"), replacements);
+            string afterImage = ReplaceTemplateTokens(template.GetRequiredSection("AfterImage"), replacements);
+            string unsubscribe = RenderOptionalTemplateSection(template.GetRequiredSection("Unsubscribe"), replacements, unsubscribeUrl);
+            string closing = ReplaceTemplateTokens(template.GetRequiredSection("Closing"), replacements);
+            string signature = ReplaceTemplateTokens(template.GetRequiredSection("Signature"), replacements);
+
+            string textBody = JoinTextSections(greeting, beforeImage, $"View the design: {patternUrl}", afterImage, unsubscribe, closing, signature);
+            string htmlBody =
+                JoinHtmlSections(greeting, beforeImage) +
+                imageWithLink +
+                JoinHtmlSections(afterImage, unsubscribe, closing, signature);
+
+            return new RenderedEmailContent(subject, textBody, htmlBody);
+        }
+
+        private static string RenderOptionalTemplateSection(
+            string templateValue,
+            IReadOnlyDictionary<string, string> replacements,
+            string? requiredPlaceholderValue)
+        {
+            if (string.IsNullOrWhiteSpace(requiredPlaceholderValue))
+                return string.Empty;
+
+            return ReplaceTemplateTokens(templateValue, replacements);
+        }
+
+        private EmailTemplateDefinition LoadEmailTemplate(
+            string appSettingKey,
+            string defaultRelativePath,
+            IEnumerable<string> requiredSections)
+        {
+            string configuredPath = ConfigurationManager.AppSettings[appSettingKey] ?? defaultRelativePath;
+            string resolvedPath = ResolveTemplatePath(configuredPath);
+            if (!File.Exists(resolvedPath))
+            {
+                throw new FileNotFoundException($"Email template file was not found: {resolvedPath}", resolvedPath);
+            }
+
+            var sections = ParseTemplateSections(File.ReadAllText(resolvedPath), resolvedPath);
+            foreach (string requiredSection in requiredSections)
+            {
+                if (!sections.TryGetValue(requiredSection, out string? value) || string.IsNullOrWhiteSpace(value))
+                {
+                    throw new InvalidOperationException(
+                        $"Email template section '{requiredSection}' is missing or empty in {resolvedPath}.");
+                }
+            }
+
+            return new EmailTemplateDefinition(resolvedPath, sections);
+        }
+
+        private static string ResolveTemplatePath(string templatePath)
+        {
+            if (Path.IsPathRooted(templatePath))
+                return templatePath;
+
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, templatePath);
+        }
+
+        private static Dictionary<string, string> ParseTemplateSections(string content, string sourcePath)
+        {
+            var sections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string? currentSection = null;
+            var buffer = new StringBuilder();
+
+            using var reader = new StringReader(content);
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (TryGetTemplateSectionName(line, out string? sectionName))
+                {
+                    CommitTemplateSection(sections, currentSection, buffer, sourcePath);
+                    currentSection = sectionName;
+                    buffer.Clear();
+                    continue;
+                }
+
+                if (currentSection == null)
+                    continue;
+
+                if (buffer.Length > 0)
+                    buffer.AppendLine();
+
+                buffer.Append(line);
+            }
+
+            CommitTemplateSection(sections, currentSection, buffer, sourcePath);
+
+            if (sections.Count == 0)
+                throw new InvalidOperationException($"Email template file {sourcePath} does not contain any sections.");
+
+            return sections;
+        }
+
+        private static bool TryGetTemplateSectionName(string line, out string? sectionName)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length >= 3 && trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.EndsWith("]", StringComparison.Ordinal))
+            {
+                sectionName = trimmed.Substring(1, trimmed.Length - 2).Trim();
+                return sectionName.Length > 0;
+            }
+
+            sectionName = null;
+            return false;
+        }
+
+        private static void CommitTemplateSection(
+            IDictionary<string, string> sections,
+            string? sectionName,
+            StringBuilder buffer,
+            string sourcePath)
+        {
+            if (string.IsNullOrWhiteSpace(sectionName))
+                return;
+
+            if (sections.ContainsKey(sectionName))
+            {
+                throw new InvalidOperationException(
+                    $"Email template file {sourcePath} contains duplicate section '{sectionName}'.");
+            }
+
+            sections[sectionName] = buffer.ToString().Trim();
+        }
+
+        private static Dictionary<string, string> CreateCommonTemplateReplacements(string? firstName)
+        {
+            string userName = string.IsNullOrWhiteSpace(firstName)
+                ? "[Recipient's Name]"
+                : firstName.Trim();
+
+            return new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["<username>"] = userName
+            };
+        }
+
+        private static string ReplaceTemplateTokens(string templateValue, IReadOnlyDictionary<string, string> replacements)
+        {
+            string rendered = templateValue;
+            foreach (var pair in replacements)
+            {
+                rendered = rendered.Replace(pair.Key, pair.Value, StringComparison.Ordinal);
+            }
+
+            return rendered;
+        }
+
+        private static string JoinTextSections(params string[] sections) =>
+            string.Join("\r\n\r\n", sections.Where(section => !string.IsNullOrWhiteSpace(section)));
+
+        private static string JoinHtmlSections(params string[] sections) =>
+            string.Concat(sections
+                .Where(section => !string.IsNullOrWhiteSpace(section))
+                .Select(ConvertPlainTextToHtml));
+
+        private string BuildPatternUrl(LatestDesignEmailInfo latestDesign)
+        {
+            string caption = (latestDesign.Title ?? "Cross-stitch-pattern").Replace(' ', '-');
+            int.TryParse(latestDesign.NPage, out int nPage);
+            return $"{_linkHelper.SiteBaseUrl}/{caption}-{latestDesign.AlbumId}-{nPage - 1}-Free-Design.aspx";
+        }
 
         private static List<string> ReadSuppressedEmails(string filePath)
         {
@@ -3093,8 +3334,8 @@ namespace Uploader
 
                 if (missingKeys.Count > 0)
                 {
-                    if (design.DesignId == 5366) 
-                    { 
+                    if (design.DesignId == 5366)
+                    {
                     }
                     missing.Add(new MissingPdfInfo(design.DesignId, design.AlbumId, missingKeys));
                 }
@@ -3211,13 +3452,7 @@ namespace Uploader
 
         private async void SendAdminUserEmail_Click(object sender, RoutedEventArgs e)
         {
-            if (PatternInfo == null)
-            {
-                txtStatus.Text += "Extract PDF info before sending admin email.\r\n";
-                return;
-            }
-
-            txtStatus.Text += "Sending user-style email to admin (1 email)...\r\n";
+            txtStatus.Text += "Sending user-style email to admin using the latest design in DynamoDB (1 email)...\r\n";
             try
             {
                 await SendAdminUserStyleEmailAsync().ConfigureAwait(false);
