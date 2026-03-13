@@ -6,240 +6,242 @@
         Height="900"
         WindowStartupLocation="CenterScreen">
 
-    <DockPanel>
+        <DockPanel>
 
-        <!-- TOP PANEL: Folder select + folder path + Album ID -->
-        <Border DockPanel.Dock="Top"
-                Padding="10"
-                Background="#EEE"
-                CornerRadius="5"
-                Margin="5">
-            <StackPanel Orientation="Horizontal"
-                        VerticalAlignment="Center">
+                <!-- TOP PANEL: Folder select + folder path + Album ID -->
+                <Border DockPanel.Dock="Top"
+                        Padding="10"
+                        Background="#EEE"
+                        CornerRadius="5"
+                        Margin="5">
+                        <StackPanel Orientation="Horizontal"
+                                    VerticalAlignment="Center">
 
-                <!-- Select folder button -->
-                <Button Content="Select folder"
-                        Width="110"
-                        Margin="0,0,10,0"
-                        Click="BtnSelectFolder_Click" />
+                                <!-- Select folder button -->
+                                <Button Content="Select folder"
+                                        Width="110"
+                                        Margin="0,0,10,0"
+                                        Click="BtnSelectFolder_Click"/>
 
-                <!-- Folder path -->
-                <TextBox x:Name="txtFolderPath"
-                         Width="250"
-                         Margin="0,0,15,0"
-                         VerticalContentAlignment="Center"
-                         IsReadOnly="True" />
+                                <!-- Folder path -->
+                                <TextBox x:Name="txtFolderPath"
+                                         Width="250"
+                                         Margin="0,0,15,0"
+                                         VerticalContentAlignment="Center"
+                                         IsReadOnly="True"/>
 
-                <!-- Album ID -->
-                <TextBlock Text="Album ID:"
-                           VerticalAlignment="Center"
-                           Margin="5" />
-                <TextBox x:Name="txtAlbumNumber"
-                         Width="60"
-                         Margin="5"
-                        VerticalContentAlignment="Center" />
-            </StackPanel>
-        </Border>
-
-        <!-- BOTTOM: Buttons + status log -->
-        <StackPanel DockPanel.Dock="Bottom"
-                    Orientation="Vertical">
-
-            <Expander Header="More actions"
-                      Margin="10,0,10,5">
-                <WrapPanel HorizontalAlignment="Left">
-                    <Button Content="Test Pinterest"
-                            Width="120"
-                            Height="26"
-                            Margin="10"
-                            Click="BtnTestPinterest_Click" />
-
-                    <Button Content="Create Pinterest Boards"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="BtnCreateBoards_Click" />
-                    <Button Content="Rename Pinterest Boards"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="BtnRenameBoards_Click" />
-                    <Button Content="Initialize User CIDs"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="InitializeUserCid_Click" />
-                    <Button Content="Initialize CrossStitchItems User CIDs"
-                            Width="250"
-                            Height="26"
-                            Margin="10"
-                            Click="InitializeItemsUserCid_Click" />
-                    <Button Content="Send Admin Test Email"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="SendAdminUserEmail_Click" />
-                    <Button Content="Remove Suppressed Users"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="RemoveSuppressedUsers_Click" />
-                    <Button Content="Mark Users Verified"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="MarkUsersVerified_Click" />
-
-                    <Button Content="Check Missing PDFs"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="CheckMissingPdfs_Click" />
-
-                    <Button Content="Initialize User Unsubscribe"
-                            Width="190"
-                            Height="26"
-                            Margin="10"
-                            Click="InitializeUserUnsubscribe_Click" />
-                    <Button Content="Initialize User Subscriptions"
-                            Width="220"
-                            Height="26"
-                            Margin="10"
-                            Click="InitializeUserSubscriptions_Click" />
-                </WrapPanel>
-            </Expander>
-
-            <TextBox x:Name="txtStatus"
-                     Height="480"
-                     Margin="5"
-                     TextWrapping="Wrap"
-                     Foreground="Green"
-                     IsReadOnly="True"
-                     AcceptsReturn="True"
-                     VerticalScrollBarVisibility="Auto"
-                     HorizontalScrollBarVisibility="Auto"
-                     TextChanged="TxtStatus_OnTextChanged" />
-        </StackPanel>
-
-        <!-- MAIN CONTENT AREA -->
-        <Grid Margin="5" Height="250.08">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="362*" />
-                <ColumnDefinition Width="14*" />
-                <ColumnDefinition Width="29*" />
-                <ColumnDefinition Width="405*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- LEFT: Preview image + primary actions -->
-            <Grid Grid.Column="0"
-                  Margin="5,5,5,5">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <Border Grid.Row="0"
-                        Margin="0,0,0,8"
-                        Padding="5"
-                        BorderBrush="#CCC"
-                        BorderThickness="1"
-                        CornerRadius="5">
-                    <Image x:Name="imgBatch"
-                           Stretch="Uniform" />
+                                <!-- Album ID -->
+                                <TextBlock Text="Album ID:"
+                                           VerticalAlignment="Center"
+                                           Margin="5"/>
+                                <TextBox x:Name="txtAlbumNumber"
+                                         Width="60"
+                                         Margin="5"
+                                         VerticalContentAlignment="Center"/>
+                        </StackPanel>
                 </Border>
 
-                <WrapPanel Grid.Row="1"
-                           HorizontalAlignment="Left"
-                           Margin="0,0,0,0">
-                    <Button Content="Upload"
-                            Width="80"
-                            Height="26"
-                            Margin="0,0,10,0"
-                            Click="BtnUpload_Click" />
-                    <Button Content="Send Emails"
-                            Width="110"
-                            Height="26"
-                            Click="BtnSendEmails_Click" />
-                    <Button Content="Send Text Emails"
-                            Width="130"
-                            Height="26"
-                            Margin="10,0,0,0"
-                            Click="BtnSendTextEmails_Click" />
-                </WrapPanel>
-            </Grid>
+                <!-- BOTTOM: Buttons + status log -->
+                <StackPanel DockPanel.Dock="Bottom"
+                            Orientation="Vertical">
 
-            <!-- Spacer -->
-            <Grid Grid.Column="1" />
+                        <Expander Header="More actions"
+                                  Margin="10,0,10,5">
+                                <WrapPanel HorizontalAlignment="Left">
+                                        <Button Content="Test Pinterest"
+                                                Width="120"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="BtnTestPinterest_Click"/>
 
-            <!-- RIGHT: Pattern fields -->
-            <Grid Grid.Column="2"
-                  Margin="5,5,5,5" Grid.ColumnSpan="2">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="80" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+                                        <Button Content="Create Pinterest Boards"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="BtnCreateBoards_Click"/>
+                                        <Button Content="Rename Pinterest Boards"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="BtnRenameBoards_Click"/>
+                                        <Button Content="Initialize User CIDs"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="InitializeUserCid_Click"/>
+                                        <Button Content="Initialize CrossStitchItems User CIDs"
+                                                Width="250"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="InitializeItemsUserCid_Click"/>
+                                        <Button Content="Send Admin Test Email"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="SendAdminUserEmail_Click"/>
+                                        <Button Content="Remove Suppressed Users"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="RemoveSuppressedUsers_Click"/>
+                                        <Button Content="Mark Users Verified"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="MarkUsersVerified_Click"/>
 
-                <TextBlock Text="Title:"
-                           Grid.Row="0"
-                           Grid.Column="0"
-                           VerticalAlignment="Center" />
-                <TextBlock x:Name="txtTitle"
-                           Grid.Row="0"
-                           Grid.Column="1"
-                           Margin="0,3"
-                           TextWrapping="Wrap"
-                           VerticalAlignment="Center" />
+                                        <Button Content="Check Missing PDFs"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="CheckMissingPdfs_Click"/>
 
-                <TextBlock Text="Width:"
-                           Grid.Row="1"
-                           Grid.Column="0"
-                           VerticalAlignment="Center" />
-                <TextBlock x:Name="txtWidth"
-                           Grid.Row="1"
-                           Grid.Column="1"
-                           Margin="0,3"
-                           VerticalAlignment="Center" />
+                                        <Button Content="Initialize User Unsubscribe"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="InitializeUserUnsubscribe_Click"/>
+                                        <Button Content="Initialize User Subscriptions"
+                                                Width="220"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="InitializeUserSubscriptions_Click"/>
+                                </WrapPanel>
+                        </Expander>
 
-                <TextBlock Text="Height:"
-                           Grid.Row="2"
-                           Grid.Column="0"
-                           VerticalAlignment="Center" />
-                <TextBlock x:Name="txtHeight"
-                           Grid.Row="2"
-                           Grid.Column="1"
-                           Margin="0,3"
-                           VerticalAlignment="Center" />
+                        <TextBox x:Name="txtStatus"
+                                 Height="480"
+                                 Margin="5"
+                                 TextWrapping="Wrap"
+                                 Foreground="Green"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 TextChanged="TxtStatus_OnTextChanged"/>
+                </StackPanel>
 
-                <TextBlock Text="Colors:"
-                           Grid.Row="3"
-                           Grid.Column="0"
-                           VerticalAlignment="Center" />
-                <TextBlock x:Name="txtNColors"
-                           Grid.Row="3"
-                           Grid.Column="1"
-                           Margin="0,3"
-                           VerticalAlignment="Center" />
+                <!-- MAIN CONTENT AREA -->
+                <Grid Margin="5"
+                      Height="250.08">
+                        <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="362*"/>
+                                <ColumnDefinition Width="14*"/>
+                                <ColumnDefinition Width="29*"/>
+                                <ColumnDefinition Width="405*"/>
+                        </Grid.ColumnDefinitions>
 
-                <TextBlock Text="Notes:"
-                           Grid.Row="4"
-                           Grid.Column="0"
-                           VerticalAlignment="Top" />
-                <TextBlock x:Name="txtNotes"
-                           Grid.Row="4"
-                           Grid.Column="1"
-                           Margin="0,3"
-                           MinHeight="120"
-                           TextWrapping="Wrap" />
-            </Grid>
-        </Grid>
+                        <!-- LEFT: Preview image + primary actions -->
+                        <Grid Grid.Column="0"
+                              Margin="5,5,5,5">
+                                <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-    </DockPanel>
+                                <Border Grid.Row="0"
+                                        Margin="0,0,0,8"
+                                        Padding="5"
+                                        BorderBrush="#CCC"
+                                        BorderThickness="1"
+                                        CornerRadius="5">
+                                        <Image x:Name="imgBatch"
+                                               Stretch="Uniform"/>
+                                </Border>
+
+                                <WrapPanel Grid.Row="1"
+                                           HorizontalAlignment="Left"
+                                           Margin="0,0,0,0">
+                                        <Button Content="Upload"
+                                                Width="80"
+                                                Height="26"
+                                                Margin="0,0,10,0"
+                                                Click="BtnUpload_Click"/>
+                                        <Button Content="Send Emails"
+                                                Width="110"
+                                                Height="26"
+                                                Click="BtnSendEmails_Click"/>
+                                        <Button Content="Send Text Emails"
+                                                Width="130"
+                                                Height="26"
+                                                Margin="10,0,0,0"
+                                                Click="BtnSendTextEmails_Click"/>
+                                </WrapPanel>
+                        </Grid>
+
+                        <!-- Spacer -->
+                        <Grid Grid.Column="1"/>
+
+                        <!-- RIGHT: Pattern fields -->
+                        <Grid Grid.Column="2"
+                              Margin="5,5,5,5"
+                              Grid.ColumnSpan="2">
+                                <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text="Title:"
+                                           Grid.Row="0"
+                                           Grid.Column="0"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="txtTitle"
+                                           Grid.Row="0"
+                                           Grid.Column="1"
+                                           Margin="0,3"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center"/>
+
+                                <TextBlock Text="Width:"
+                                           Grid.Row="1"
+                                           Grid.Column="0"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="txtWidth"
+                                           Grid.Row="1"
+                                           Grid.Column="1"
+                                           Margin="0,3"
+                                           VerticalAlignment="Center"/>
+
+                                <TextBlock Text="Height:"
+                                           Grid.Row="2"
+                                           Grid.Column="0"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="txtHeight"
+                                           Grid.Row="2"
+                                           Grid.Column="1"
+                                           Margin="0,3"
+                                           VerticalAlignment="Center"/>
+
+                                <TextBlock Text="Colors:"
+                                           Grid.Row="3"
+                                           Grid.Column="0"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="txtNColors"
+                                           Grid.Row="3"
+                                           Grid.Column="1"
+                                           Margin="0,3"
+                                           VerticalAlignment="Center"/>
+
+                                <TextBlock Text="Notes:"
+                                           Grid.Row="4"
+                                           Grid.Column="0"
+                                           VerticalAlignment="Top"/>
+                                <TextBlock x:Name="txtNotes"
+                                           Grid.Row="4"
+                                           Grid.Column="1"
+                                           Margin="0,3"
+                                           MinHeight="120"
+                                           TextWrapping="Wrap"/>
+                        </Grid>
+                </Grid>
+
+        </DockPanel>
 
 </Window>

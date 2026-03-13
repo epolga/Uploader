@@ -50,8 +50,10 @@ namespace Uploader
         private readonly AmazonS3Client _s3Client = new AmazonS3Client();
         private readonly AmazonSimpleEmailServiceClient _sesClient = new AmazonSimpleEmailServiceClient();
 
-        private readonly EC2Helper _ec2Helper =
-            new EC2Helper(RegionEndpoint.USEast1, "cross-stitch-env");
+        private readonly ElasticBeanstalkHelper _elasticBeanstalkHelper =
+            new ElasticBeanstalkHelper(
+                RegionEndpoint.USEast1,
+                ConfigurationManager.AppSettings["ElasticBeanstalkEnvironmentName"] ?? "cross-stitch-com-env");
 
         private readonly S3Helper _s3Helper =
             new S3Helper(RegionEndpoint.USEast1, "cross-stitch-designs");
@@ -544,17 +546,17 @@ namespace Uploader
             // 4. Insert item into DynamoDB
             await InsertItemIntoDynamoDbAsync(nGlobalPage).ConfigureAwait(false);
 
-            // 5. Reboot EC2 environment (status text is updated via callback which marshals to UI)
-            bool rebooted = await _ec2Helper.RebootInstancesRequest(msg =>
+            // 5. Restart Elastic Beanstalk environment (status text is updated via callback which marshals to UI)
+            bool restarted = await _elasticBeanstalkHelper.RestartEnvironmentAsync(msg =>
             {
                 Dispatcher.BeginInvoke(new Action(() => { txtStatus.Text += msg; }));
             }).ConfigureAwait(false);
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                txtStatus.Text += rebooted
-                    ? "Reboot requested successfully.\r\n"
-                    : "Reboot failed.\r\n";
+                txtStatus.Text += restarted
+                    ? "Elastic Beanstalk restart requested successfully.\r\n"
+                    : "Elastic Beanstalk restart failed.\r\n";
             }));
         }
 
