@@ -21,6 +21,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="App.private.config" Condition="Exists('App.private.config')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="AlbumBoards.csv">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

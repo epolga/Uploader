@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<appSettings>
+  <add key="SenderEmail" value="your-sender@example.com"/>
+  <add key="AdminEmail" value="your-admin@example.com"/>
+  <add key="PinterestClientSecret" value="replace-me"/>
+  <add key="PinterestAccessToken" value="replace-me"/>
+  <add key="PinterestTokenStorePath" value="D:\Tmp\pinterest_tokens.json"/>
+  <add key="UnsubscribeSecret" value="replace-me"/>
+</appSettings>

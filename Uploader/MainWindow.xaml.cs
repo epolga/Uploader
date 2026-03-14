@@ -2632,7 +2632,9 @@ namespace Uploader
 
             return new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["<username>"] = userName
+                ["<username>"] = userName,
+                ["[Recipient's Name]"] = userName,
+                ["[Recipient’s Name]"] = userName
             };
         }
 

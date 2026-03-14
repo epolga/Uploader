@@ -1,24 +1,27 @@
 [Subject]
-My New Bunny Design - Feedback Welcome
+Excited to Share My New Penguin Design
 
 [Greeting]
 Dear <username>,
 
 [BeforeImage]
-I am excited to share my latest cross-stitch design featuring an adorable bunny.
-I would love to hear your thoughts and any feedback you may have.
+I am thrilled to present my latest cross-stitch design featuring an adorable penguin!
+This design captures the charm and playfulness of these delightful creatures, and I can't wait to hear your thoughts on it.
 
 [ImageWithLink]
 <p><a href="<pattern_url>"><img src="<image_url>" alt="<alt_text>" style="max-width:100px; max-height:100px; width:auto; height:auto; border:0; display:block;" /></a></p>
 
 [AfterImage]
-Thank you for your support and input.
+Your feedback is invaluable to me as I continue to create new patterns.
+I would greatly appreciate any comments or suggestions you might have regarding this design.
 
 [Unsubscribe]
 If you prefer not to receive these emails, you can unsubscribe here:
 <unsubscribe_url>
 
 [Closing]
+Thank you for your support!
+
 Best regards,
 
 [Signature]

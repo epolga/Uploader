@@ -38,8 +38,8 @@ bld/
 Generated\ Files/
 
 # Configuration files
-App.config
-Uploader/App.config
+App.private.config
+Uploader/App.private.config
 
 # MSTest test Results
 [Tt]est[Rr]esult*/
