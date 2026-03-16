@@ -40,7 +40,11 @@ namespace UploadPatterns
         /// <summary>
         /// Pinterest Pin ID created for this design (if any).
         /// </summary>
-        public string PinId { get; set; } = string.Empty;
+        public string PinId
+        {
+            get => _pinId;
+            set => _pinId = value ?? string.Empty;
+        }
 
         /// <summary>
         /// Pattern title extracted from PDF.
@@ -96,7 +100,7 @@ namespace UploadPatterns
         public string PinID
         {
             get => _pinId;
-            set => _pinId = value;
+            set => _pinId = value ?? string.Empty;
         }
 
 

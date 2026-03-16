@@ -539,9 +539,14 @@ namespace Uploader
 
             // 3. Create Pinterest pin
             string? pinterestPhotoFileName = GetPinterestPhotoFileName();
-            PatternInfo.PinID = await _pinterestHelper
+            PatternInfo.PinId = await _pinterestHelper
                 .UploadPinForPatternAsync(PatternInfo, photoFileName: pinterestPhotoFileName)
                 .ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(PatternInfo.PinId))
+            {
+                throw new InvalidOperationException("Pinterest pin was created without returning a pin ID.");
+            }
 
             // 4. Insert item into DynamoDB
             await InsertItemIntoDynamoDbAsync(nGlobalPage).ConfigureAwait(false);
@@ -942,6 +947,9 @@ namespace Uploader
             if (PatternInfo == null)
                 throw new InvalidOperationException("PatternInfo is not initialized.");
 
+            if (string.IsNullOrWhiteSpace(PatternInfo.PinId))
+                throw new InvalidOperationException("Pinterest PinID is missing; aborting DynamoDB insert.");
+
             var item = new Dictionary<string, AttributeValue>
             {
                 { "ID",          new AttributeValue { S = AlbumPartitionKey } },
@@ -957,7 +965,7 @@ namespace Uploader
                 { "NGlobalPage", new AttributeValue { N = nGlobalPage.ToString() } },
                 { "Notes",       new AttributeValue { S = PatternInfo.Notes } },
                 { "Width",       new AttributeValue { N = PatternInfo.Width.ToString() } },
-                { "PinID",       new AttributeValue { S = PatternInfo.PinID ?? string.Empty } }
+                { "PinID",       new AttributeValue { S = PatternInfo.PinId } }
             };
 
             var request = new PutItemRequest
