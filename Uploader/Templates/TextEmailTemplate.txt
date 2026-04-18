@@ -1,25 +1,37 @@
 [Subject]
-Excited to Share My New Penguin Design
+I’ve created a new design and would really love your opinion 💛
 
 [Greeting]
-Dear <username>,
+Hi [Recipient's Name],
 
 [BeforeBody]
-I am thrilled to present my latest cross-stitch design featuring an adorable penguin!
-This design captures the charm and playfulness of these delightful creatures, and I can't wait to hear your thoughts on it.
+I’ve created a new design and would really love your opinion 💛
+
+✝️ Cute Jesus Cross-Stitch Pattern
+A soft, simple design meant to bring warmth and meaning to your stitching.
+
+✔ Beginner-friendly
+✔ Limited colors
+✔ Perfect for small projects or gifts
 
 [AfterBody]
-Your feedback is invaluable to me as I continue to create new patterns.
-I would greatly appreciate any comments or suggestions you might have regarding this design.
+You can download the PDF here:
+<pattern_url>
+
+I’d truly appreciate your feedback:
+– Do you like this style?
+– Would you stitch it?
+– What would you change?
+
+Just reply to this email — I read every response.
 
 [Unsubscribe]
 If you prefer not to receive these emails, you can unsubscribe here:
 <unsubscribe_url>
 
 [Closing]
-Thank you for your support!
-
-Best regards,
+Thank you,
 
 [Signature]
 Ann
+cross-stitch.com

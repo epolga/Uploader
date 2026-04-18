@@ -49,6 +49,7 @@ namespace Uploader
         private readonly AmazonDynamoDBClient _dynamoDbClient = new AmazonDynamoDBClient();
         private readonly AmazonS3Client _s3Client = new AmazonS3Client();
         private readonly AmazonSimpleEmailServiceClient _sesClient = new AmazonSimpleEmailServiceClient();
+        private readonly string? _sesConfigurationSetName = GetOptionalAppSetting("SesConfigurationSetName");
 
         private readonly ElasticBeanstalkHelper _elasticBeanstalkHelper =
             new ElasticBeanstalkHelper(
@@ -78,6 +79,7 @@ namespace Uploader
         private const float PinterestWatermarkMinFontSize = 24f;
         private const string HtmlEmailTemplatePathDefault = "Templates\\HtmlEmailTemplate.txt";
         private const string TextEmailTemplatePathDefault = "Templates\\TextEmailTemplate.txt";
+        private const string AdminPreviewUnsubscribeToken = "preview-admin-unsubscribe-token";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
         private static readonly string[] RequiredPdfVariants = { "1", "3", "5" };
@@ -590,6 +592,8 @@ namespace Uploader
             string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
             string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
             EmailTemplateDefinition template = LoadTextEmailTemplate();
+            LatestDesignEmailInfo latestDesign = await GetLatestDesignEmailInfoAsync().ConfigureAwait(false);
+            string patternUrl = BuildPatternUrl(latestDesign);
 
             if (string.IsNullOrWhiteSpace(sender))
                 throw new InvalidOperationException("SenderEmail is not configured.");
@@ -598,7 +602,7 @@ namespace Uploader
 
             if (!string.IsNullOrWhiteSpace(admin))
             {
-                RenderedEmailContent adminContent = RenderTextEmailContent(template, null, null);
+                RenderedEmailContent adminContent = RenderTextEmailContent(template, null, AppendUtmParameters(patternUrl), null);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -606,7 +610,8 @@ namespace Uploader
                     new[] { admin },
                     adminContent.Subject,
                     adminContent.TextBody,
-                    adminContent.HtmlBody).ConfigureAwait(false);
+                    adminContent.HtmlBody,
+                    configurationSetName: _sesConfigurationSetName).ConfigureAwait(false);
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -647,6 +652,7 @@ namespace Uploader
                 recipients,
                 template,
                 sender,
+                patternUrl,
                 totalUserCount,
                 usersTable,
                 emailAttribute,
@@ -1142,7 +1148,8 @@ namespace Uploader
                 new[] { admin },
                 "Upload Successful",
                 textBody,
-                htmlBody).ConfigureAwait(false);
+                htmlBody,
+                configurationSetName: _sesConfigurationSetName).ConfigureAwait(false);
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -1925,13 +1932,15 @@ namespace Uploader
                 patternUrl,
                 "admin",
                 DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture));
+            string unsubscribeUrl = BuildUnsubscribeUrl(AdminPreviewUnsubscribeToken);
+            var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
             RenderedEmailContent content = RenderHtmlEmailContent(
                 template,
                 "admin",
                 patternUrlWithTracking,
                 imageUrl,
                 altText,
-                null);
+                unsubscribeUrl);
 
             await _emailHelper.SendEmailAsync(
                 _sesClient,
@@ -1939,7 +1948,9 @@ namespace Uploader
                 new[] { admin },
                 content.Subject,
                 content.TextBody,
-                content.HtmlBody).ConfigureAwait(false);
+                content.HtmlBody,
+                unsubscribeHeaders,
+                configurationSetName: _sesConfigurationSetName).ConfigureAwait(false);
         }
 
         private async Task SendNotificationMailToUsersAsync(
@@ -1982,7 +1993,8 @@ namespace Uploader
                     new[] { admin },
                     adminContent.Subject,
                     adminContent.TextBody,
-                    adminContent.HtmlBody).ConfigureAwait(false);
+                    adminContent.HtmlBody,
+                    configurationSetName: _sesConfigurationSetName).ConfigureAwait(false);
             }
 
             var recipients = userRecipients;
@@ -2289,6 +2301,7 @@ namespace Uploader
             List<UserRecipient> recipients,
             EmailTemplateDefinition template,
             string sender,
+            string patternUrl,
             int totalCount,
             string usersTable,
             string emailAttribute,
@@ -2303,15 +2316,40 @@ namespace Uploader
                 return;
             }
 
-            int targetCount = Math.Max(totalCount, recipients.Count);
+            List<UserRecipient> eligibleRecipients = recipients
+                .Where(r => !string.IsNullOrWhiteSpace(r.UnsubscribeToken))
+                .ToList();
+            int skippedMissingToken = recipients.Count - eligibleRecipients.Count;
+
+            if (skippedMissingToken > 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text +=
+                        $"{label} Skipping {skippedMissingToken} recipient(s) without unsubscribe token.\r\n";
+                }));
+            }
+
+            if (eligibleRecipients.Count == 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"{label} No eligible recipients with unsubscribe tokens.\r\n";
+                }));
+                return;
+            }
+
+            int targetCount = eligibleRecipients.Count;
             var stopwatch = Stopwatch.StartNew();
             int sent = 0;
 
-            foreach (var recipient in recipients)
+            foreach (var recipient in eligibleRecipients)
             {
                 string unsubscribeUrl = BuildUnsubscribeUrlFromStoredToken(recipient.Email, recipient.UnsubscribeToken);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
-                RenderedEmailContent content = RenderTextEmailContent(template, recipient.FirstName, unsubscribeUrl);
+                string cid = recipient.Cid ?? string.Empty;
+                string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture));
+                RenderedEmailContent content = RenderTextEmailContent(template, recipient.FirstName, patternUrlWithTracking, unsubscribeUrl);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -2320,7 +2358,8 @@ namespace Uploader
                     content.Subject,
                     content.TextBody,
                     content.HtmlBody,
-                    unsubscribeHeaders).ConfigureAwait(false);
+                    unsubscribeHeaders,
+                    configurationSetName: _sesConfigurationSetName).ConfigureAwait(false);
 
                 try
                 {
@@ -2337,7 +2376,7 @@ namespace Uploader
 
                 sent++;
 
-                if (sent % 50 == 0 || sent == recipients.Count)
+                if (sent % 50 == 0 || sent == eligibleRecipients.Count)
                 {
                     TimeSpan elapsed = stopwatch.Elapsed;
                     double avgSeconds = sent > 0 ? elapsed.TotalSeconds / sent : 0;
@@ -2357,7 +2396,8 @@ namespace Uploader
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                txtStatus.Text += $"{label} Finished sending {sent} email(s) in {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
+                txtStatus.Text +=
+                    $"{label} Finished sending {sent} email(s) in {stopwatch.Elapsed:hh\\:mm\\:ss}. Skipped {skippedMissingToken} without token.\r\n";
             }));
         }
 
@@ -2385,11 +2425,34 @@ namespace Uploader
                 return;
             }
 
-            int targetCount = Math.Max(totalCount, recipients.Count);
+            List<UserRecipient> eligibleRecipients = recipients
+                .Where(r => !string.IsNullOrWhiteSpace(r.UnsubscribeToken))
+                .ToList();
+            int skippedMissingToken = recipients.Count - eligibleRecipients.Count;
+
+            if (skippedMissingToken > 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text +=
+                        $"{label} Skipping {skippedMissingToken} recipient(s) without unsubscribe token.\r\n";
+                }));
+            }
+
+            if (eligibleRecipients.Count == 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += $"{label} No eligible recipients with unsubscribe tokens.\r\n";
+                }));
+                return;
+            }
+
+            int targetCount = eligibleRecipients.Count;
             var stopwatch = Stopwatch.StartNew();
             int sent = 0;
 
-            foreach (var recipient in recipients)
+            foreach (var recipient in eligibleRecipients)
             {
                 string cid = recipient.Cid ?? string.Empty;
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
@@ -2411,7 +2474,8 @@ namespace Uploader
                     content.Subject,
                     content.TextBody,
                     content.HtmlBody,
-                    unsubscribeHeaders).ConfigureAwait(false);
+                    unsubscribeHeaders,
+                    configurationSetName: _sesConfigurationSetName).ConfigureAwait(false);
 
                 if (updateLastEmailDate)
                 {
@@ -2431,7 +2495,7 @@ namespace Uploader
 
                 sent++;
 
-                if (sent % 50 == 0 || sent == recipients.Count)
+                if (sent % 50 == 0 || sent == eligibleRecipients.Count)
                 {
                     TimeSpan elapsed = stopwatch.Elapsed;
                     double avgSeconds = sent > 0 ? elapsed.TotalSeconds / sent : 0;
@@ -2451,7 +2515,8 @@ namespace Uploader
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                txtStatus.Text += $"{label} Finished sending {sent} email(s) in {stopwatch.Elapsed:hh\\:mm\\:ss}.\r\n";
+                txtStatus.Text +=
+                    $"{label} Finished sending {sent} email(s) in {stopwatch.Elapsed:hh\\:mm\\:ss}. Skipped {skippedMissingToken} without token.\r\n";
             }));
         }
 
@@ -2470,22 +2535,38 @@ namespace Uploader
         private static RenderedEmailContent RenderTextEmailContent(
             EmailTemplateDefinition template,
             string? firstName,
+            string? patternUrl,
             string? unsubscribeUrl)
         {
-            var replacements = CreateCommonTemplateReplacements(firstName);
-            if (!string.IsNullOrWhiteSpace(unsubscribeUrl))
-                replacements["<unsubscribe_url>"] = unsubscribeUrl;
+            Dictionary<string, string> replacements = CreateCommonTemplateReplacements(firstName);
+            replacements["<pattern_url>"] = patternUrl ?? string.Empty;
+            replacements["<unsubscribe_url>"] = unsubscribeUrl ?? string.Empty;
 
             string subject = ReplaceTemplateTokens(template.GetRequiredSection("Subject"), replacements);
             string greeting = ReplaceTemplateTokens(template.GetRequiredSection("Greeting"), replacements);
             string beforeBody = ReplaceTemplateTokens(template.GetRequiredSection("BeforeBody"), replacements);
             string afterBody = ReplaceTemplateTokens(template.GetRequiredSection("AfterBody"), replacements);
-            string unsubscribe = RenderOptionalTemplateSection(template.GetRequiredSection("Unsubscribe"), replacements, unsubscribeUrl);
+            string unsubscribe = RenderOptionalTemplateSection(
+                template.GetRequiredSection("Unsubscribe"),
+                replacements,
+                unsubscribeUrl);
             string closing = ReplaceTemplateTokens(template.GetRequiredSection("Closing"), replacements);
             string signature = ReplaceTemplateTokens(template.GetRequiredSection("Signature"), replacements);
+            string textBody = JoinTextSections(
+                greeting,
+                beforeBody,
+                afterBody,
+                unsubscribe,
+                closing,
+                signature);
+            string htmlBody = JoinHtmlSections(
+                greeting,
+                beforeBody,
+                afterBody,
+                unsubscribe,
+                closing,
+                signature);
 
-            string textBody = JoinTextSections(greeting, beforeBody, afterBody, unsubscribe, closing, signature);
-            string htmlBody = JoinHtmlSections(greeting, beforeBody, afterBody, unsubscribe, closing, signature);
             return new RenderedEmailContent(subject, textBody, htmlBody);
         }
 
@@ -2497,30 +2578,52 @@ namespace Uploader
             string altText,
             string? unsubscribeUrl)
         {
-            var replacements = CreateCommonTemplateReplacements(firstName);
-            replacements["<pattern_url>"] = patternUrl;
-            replacements["<image_url>"] = imageUrl;
-            replacements["<alt_text>"] = WebUtility.HtmlEncode(altText);
-            if (!string.IsNullOrWhiteSpace(unsubscribeUrl))
-                replacements["<unsubscribe_url>"] = unsubscribeUrl;
+            Dictionary<string, string> replacements = CreateCommonTemplateReplacements(firstName);
+            replacements["<pattern_url>"] = patternUrl ?? string.Empty;
+            replacements["<image_url>"] = imageUrl ?? string.Empty;
+            replacements["<alt_text>"] = altText ?? string.Empty;
+            replacements["<unsubscribe_url>"] = unsubscribeUrl ?? string.Empty;
 
             string subject = ReplaceTemplateTokens(template.GetRequiredSection("Subject"), replacements);
             string greeting = ReplaceTemplateTokens(template.GetRequiredSection("Greeting"), replacements);
             string beforeImage = ReplaceTemplateTokens(template.GetRequiredSection("BeforeImage"), replacements);
-            string imageWithLink = ReplaceTemplateTokens(template.GetRequiredSection("ImageWithLink"), replacements);
+            string imageWithLink = RenderOptionalTemplateSection(
+                template.GetRequiredSection("ImageWithLink"),
+                replacements,
+                imageUrl);
             string afterImage = ReplaceTemplateTokens(template.GetRequiredSection("AfterImage"), replacements);
-            string unsubscribe = RenderOptionalTemplateSection(template.GetRequiredSection("Unsubscribe"), replacements, unsubscribeUrl);
+            string unsubscribe = RenderOptionalTemplateSection(
+                template.GetRequiredSection("Unsubscribe"),
+                replacements,
+                unsubscribeUrl);
             string closing = ReplaceTemplateTokens(template.GetRequiredSection("Closing"), replacements);
             string signature = ReplaceTemplateTokens(template.GetRequiredSection("Signature"), replacements);
-
-            string textBody = JoinTextSections(greeting, beforeImage, $"View the design: {patternUrl}", afterImage, unsubscribe, closing, signature);
+            string textBody = JoinTextSections(
+                greeting,
+                beforeImage,
+                string.IsNullOrWhiteSpace(patternUrl) ? string.Empty : $"View the design: {patternUrl}",
+                afterImage,
+                unsubscribe,
+                closing,
+                signature);
             string htmlBody =
-                JoinHtmlSections(greeting, beforeImage) +
+                JoinHtmlSections(
+                    greeting,
+                    beforeImage) +
                 imageWithLink +
-                JoinHtmlSections(afterImage, unsubscribe, closing, signature);
+                JoinHtmlSections(
+                    afterImage,
+                    unsubscribe,
+                    closing,
+                    signature);
 
             return new RenderedEmailContent(subject, textBody, htmlBody);
         }
+
+        private static string GetRecipientName(string? firstName) =>
+            string.IsNullOrWhiteSpace(firstName)
+                ? "Friend"
+                : firstName.Trim();
 
         private static string RenderOptionalTemplateSection(
             string templateValue,
@@ -2634,9 +2737,7 @@ namespace Uploader
 
         private static Dictionary<string, string> CreateCommonTemplateReplacements(string? firstName)
         {
-            string userName = string.IsNullOrWhiteSpace(firstName)
-                ? "[Recipient's Name]"
-                : firstName.Trim();
+            string userName = GetRecipientName(firstName);
 
             return new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -2655,6 +2756,12 @@ namespace Uploader
             }
 
             return rendered;
+        }
+
+        private static string? GetOptionalAppSetting(string key)
+        {
+            string? value = ConfigurationManager.AppSettings[key];
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         }
 
         private static string JoinTextSections(params string[] sections) =>
@@ -3527,3 +3634,4 @@ namespace Uploader
         #endregion
     }
 }
+

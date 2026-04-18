@@ -8,5 +8,5 @@
 - Pinterest board description text now points to Cross-Stitch.com.
 
 ## Configuration notes
-- AppSettings keys `TextEmailSubject` and `TextEmailBody` override the default text email templates.
+- AppSettings keys `HtmlEmailTemplatePath` and `TextEmailTemplatePath` control which email template files are loaded.
 - Converter is expected at `D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe` and produces `<name>.converted.pdf`.

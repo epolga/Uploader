@@ -22,11 +22,21 @@ namespace Uploader.Helpers
             string textBody,
             string? htmlBody = null,
             IDictionary<string, string>? headers = null,
+            string? configurationSetName = null,
             CancellationToken cancellationToken = default)
         {
             if (headers != null && headers.Count > 0)
             {
-                await SendRawEmailAsync(sesClient, sender, recipients, subject, textBody, htmlBody, headers, cancellationToken)
+                await SendRawEmailAsync(
+                        sesClient,
+                        sender,
+                        recipients,
+                        subject,
+                        textBody,
+                        htmlBody,
+                        headers,
+                        configurationSetName,
+                        cancellationToken)
                     .ConfigureAwait(false);
                 return;
             }
@@ -50,6 +60,7 @@ namespace Uploader.Helpers
             {
                 Source = sender,
                 Destination = destination,
+                ConfigurationSetName = configurationSetName,
                 Message = new Amazon.SimpleEmail.Model.Message
                 {
                     Subject = new Content(subject),
@@ -68,6 +79,7 @@ namespace Uploader.Helpers
             string textBody,
             string? htmlBody,
             IDictionary<string, string> headers,
+            string? configurationSetName,
             CancellationToken cancellationToken)
         {
             string htmlPart = htmlBody ?? System.Net.WebUtility.HtmlEncode(textBody);
@@ -110,18 +122,11 @@ namespace Uploader.Helpers
             {
                 Source = sender,
                 Destinations = recipients.ToList(),
+                ConfigurationSetName = configurationSetName,
                 RawMessage = rawMessage
             };
 
-            try
-            {
-                await sesClient.SendRawEmailAsync(request, cancellationToken).ConfigureAwait(false);
-
-            }
-            catch (Exception ex)
-            {
-                string strMessage = ex.Message;
-            }
+            await sesClient.SendRawEmailAsync(request, cancellationToken).ConfigureAwait(false);
         }
     }
 }
