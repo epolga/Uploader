@@ -64,6 +64,11 @@
                                                 Height="26"
                                                 Margin="10"
                                                 Click="BtnRenameBoards_Click"/>
+                                        <Button Content="Pinterest Re-Authorize"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="BtnPinterestReAuth_Click"/>
                                         <Button Content="Initialize User CIDs"
                                                 Width="190"
                                                 Height="26"

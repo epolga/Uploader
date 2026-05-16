@@ -167,15 +167,20 @@ namespace Uploader.Helpers
             if (string.IsNullOrWhiteSpace(authorizationCode))
                 throw new ArgumentException("Authorization code must not be empty.", nameof(authorizationCode));
 
-            var content = new StringContent(
-                $"grant_type=authorization_code&code={Uri.EscapeDataString(authorizationCode)}" +
-                $"&redirect_uri={Uri.EscapeDataString(_redirectUri)}" +
-                $"&client_id={Uri.EscapeDataString(_clientId)}" +
-                $"&client_secret={Uri.EscapeDataString(_clientSecret)}",
-                Encoding.UTF8,
-                "application/x-www-form-urlencoded");
+            var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_clientId}:{_clientSecret}"));
 
-            var response = await HttpClient.PostAsync(TokenEndpoint, content).ConfigureAwait(false);
+            var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", basic);
+
+            var form = new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "authorization_code"),
+                new KeyValuePair<string, string>("code", authorizationCode),
+                new KeyValuePair<string, string>("redirect_uri", _redirectUri),
+            };
+            request.Content = new FormUrlEncodedContent(form);
+
+            var response = await HttpClient.SendAsync(request).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)

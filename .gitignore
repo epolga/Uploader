@@ -40,6 +40,8 @@ Generated\ Files/
 # Configuration files
 App.private.config
 Uploader/App.private.config
+.env
+secrets/
 
 # MSTest test Results
 [Tt]est[Rr]esult*/

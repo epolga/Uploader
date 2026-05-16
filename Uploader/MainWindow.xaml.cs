@@ -285,6 +285,84 @@ namespace Uploader
             }
         }
 
+        private async void BtnPinterestReAuth_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var clientId = ConfigurationManager.AppSettings["PinterestClientId"] ?? "";
+                var redirectUri = ConfigurationManager.AppSettings["PinterestRedirectUri"] ?? "http://localhost:8080/callback";
+                var scope = ConfigurationManager.AppSettings["PinterestScope"] ?? "";
+
+                // Pinterest expects comma-separated scopes in the URL
+                var scopeParam = scope.Replace(' ', ',');
+
+                var authUrl = $"https://www.pinterest.com/oauth/?client_id={clientId}"
+                    + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
+                    + $"&response_type=code"
+                    + $"&scope={Uri.EscapeDataString(scopeParam)}";
+
+                txtStatus.Text = "[Pinterest OAuth] Starting re-authorization...\r\n";
+                txtStatus.Text += $"[Pinterest OAuth] Scopes: {scope}\r\n";
+                txtStatus.Text += "[Pinterest OAuth] Opening browser — please approve the app...\r\n";
+
+                // Parse host and port from redirectUri
+                var callbackUri = new Uri(redirectUri);
+                var prefix = $"http://localhost:{callbackUri.Port}/";
+
+                // Start local HTTP listener before opening browser
+                var listener = new HttpListener();
+                listener.Prefixes.Add(prefix);
+                listener.Start();
+
+                // Open browser
+                Process.Start(new ProcessStartInfo(authUrl) { UseShellExecute = true });
+
+                // Wait for the callback (with timeout)
+                var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                HttpListenerContext ctx;
+                try
+                {
+                    ctx = await Task.Run(() => listener.GetContext(), cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    listener.Stop();
+                    txtStatus.Text += "[Pinterest OAuth] Timed out waiting for callback.\r\n";
+                    return;
+                }
+
+                var code = ctx.Request.QueryString["code"];
+
+                // Send a friendly response to the browser
+                var responseBytes = System.Text.Encoding.UTF8.GetBytes(
+                    "<html><body><h2>Authorization complete!</h2><p>You can close this tab.</p></body></html>");
+                ctx.Response.ContentType = "text/html";
+                ctx.Response.ContentLength64 = responseBytes.Length;
+                ctx.Response.OutputStream.Write(responseBytes, 0, responseBytes.Length);
+                ctx.Response.Close();
+                listener.Stop();
+
+                if (string.IsNullOrEmpty(code))
+                {
+                    txtStatus.Text += "[Pinterest OAuth] No authorization code received.\r\n";
+                    return;
+                }
+
+                txtStatus.Text += "[Pinterest OAuth] Code received. Exchanging for token...\r\n";
+
+                var oauthClient = new PinterestOAuthClient();
+                var tokenInfo = await oauthClient.ExchangeAuthorizationCodeAsync(code);
+
+                txtStatus.Text += $"[Pinterest OAuth] Success! Token scope: {tokenInfo.Scope}\r\n";
+                txtStatus.Text += $"[Pinterest OAuth] Expires: {tokenInfo.ExpiresAtUtc:u}\r\n";
+                txtStatus.Text += "[Pinterest OAuth] Token saved to store.\r\n";
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text += $"[Pinterest OAuth] Failed: {ex.Message}\r\n";
+            }
+        }
+
         private async void BtnTestPinterest_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -569,13 +647,18 @@ namespace Uploader
 
         private async Task SendNotificationEmailsAsync()
         {
+            DateTime recentUserCutoffUtc = DateTime.UtcNow.AddMonths(-2);
             LatestDesignEmailInfo latestDesign = await GetLatestDesignEmailInfoAsync(requirePinId: true)
                 .ConfigureAwait(false);
 
             await SendNotificationMailToAdminAsync(latestDesign)
                 .ConfigureAwait(false);
 
-            var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
+            var userRecipients = await FetchAllUserEmailsAsync(
+                    onlyVerified: true,
+                    onlySubscribed: true,
+                    minLastEmailEntryOrVerifiedAtUtc: recentUserCutoffUtc)
+                .ConfigureAwait(false);
             await SendNotificationMailToUsersAsync(
                     latestDesign,
                     userRecipients)
@@ -589,20 +672,23 @@ namespace Uploader
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
-            string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
-            string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
             EmailTemplateDefinition template = LoadTextEmailTemplate();
+            DateTime recentUserCutoffUtc = DateTime.UtcNow.AddMonths(-2);
             LatestDesignEmailInfo latestDesign = await GetLatestDesignEmailInfoAsync().ConfigureAwait(false);
             string patternUrl = BuildPatternUrl(latestDesign);
 
             if (string.IsNullOrWhiteSpace(sender))
                 throw new InvalidOperationException("SenderEmail is not configured.");
 
-            var userRecipients = await FetchAllUserEmailsAsync(onlyVerified: true, onlySubscribed: true).ConfigureAwait(false);
+            var userRecipients = await FetchAllUserEmailsAsync(
+                    onlyVerified: true,
+                    onlySubscribed: true,
+                    minLastEmailEntryOrVerifiedAtUtc: recentUserCutoffUtc)
+                .ConfigureAwait(false);
 
             if (!string.IsNullOrWhiteSpace(admin))
             {
-                RenderedEmailContent adminContent = RenderTextEmailContent(template, null, AppendUtmParameters(patternUrl), null);
+                RenderedEmailContent adminContent = RenderTextEmailContent(template, "admin", AppendUtmParameters(patternUrl), null);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -637,23 +723,13 @@ namespace Uploader
                 return;
             }
 
-            int totalUserCount = await CountUsersAsync(
-                    usersTable,
-                    $"{verifiedAttribute} = :trueVal AND (attribute_not_exists({unsubscribedAttribute}) OR {unsubscribedAttribute} = :falseVal)",
-                    new Dictionary<string, AttributeValue>
-                    {
-                        { ":trueVal", new AttributeValue { BOOL = true } },
-                        { ":falseVal", new AttributeValue { BOOL = false } }
-                    })
-                .ConfigureAwait(false);
-
             await SendTextEmailsWithProgressAsync(
                 "[TextEmail]",
                 recipients,
                 template,
                 sender,
                 patternUrl,
-                totalUserCount,
+                recipients.Count,
                 usersTable,
                 emailAttribute,
                 userIdAttribute).ConfigureAwait(false);
@@ -1035,6 +1111,7 @@ namespace Uploader
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     txtStatus.Text += $"Failed to fetch albums: {ex.Message}\r\n";
+                    DateTime recentUserCutoffUtc = DateTime.UtcNow.AddMonths(-2);
                 }));
                 return new List<AlbumInfo>();
             }
@@ -1631,7 +1708,10 @@ namespace Uploader
             public string? HtmlBody { get; }
         }
 
-        private async Task<List<UserRecipient>> FetchAllUserEmailsAsync(bool onlyVerified = false, bool onlySubscribed = false)
+        private async Task<List<UserRecipient>> FetchAllUserEmailsAsync(
+            bool onlyVerified = false,
+            bool onlySubscribed = false,
+            DateTime? minLastEmailEntryOrVerifiedAtUtc = null)
         {
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
@@ -1641,6 +1721,8 @@ namespace Uploader
             string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
             string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
             const string unsubscribeTokenAttribute = "UnsubscribeToken";
+            const string lastEmailEntryAttribute = "LastEmailEntry";
+            const string verifiedAtAttribute = "VerifiedAt";
 
             var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var recipients = new List<UserRecipient>();
@@ -1653,7 +1735,9 @@ namespace Uploader
                     firstNameAttribute,
                     userIdAttribute,
                     userCidAttribute,
-                    unsubscribeTokenAttribute
+                    unsubscribeTokenAttribute,
+                    lastEmailEntryAttribute,
+                    verifiedAtAttribute
                 };
 
                 if (onlyVerified)
@@ -1747,6 +1831,13 @@ namespace Uploader
                             if (unsubscribed)
                                 continue;
                         }
+
+                        if (minLastEmailEntryOrVerifiedAtUtc.HasValue &&
+                            !MatchesRecentEmailRecipientWindow(item, minLastEmailEntryOrVerifiedAtUtc.Value))
+                        {
+                            continue;
+                        }
+
                         string? unsubscribeToken = null;
                         if (item.TryGetValue(unsubscribeTokenAttribute, out var tokenAttr) &&
                             !string.IsNullOrWhiteSpace(tokenAttr.S))
@@ -1776,6 +1867,47 @@ namespace Uploader
             }
 
             return recipients;
+        }
+
+        private static bool MatchesRecentEmailRecipientWindow(
+            IReadOnlyDictionary<string, AttributeValue> item,
+            DateTime minLastEmailEntryOrVerifiedAtUtc)
+        {
+            return TryGetDateTimeAttributeUtc(item, "LastEmailEntry", out DateTime lastEmailEntryUtc) && lastEmailEntryUtc >= minLastEmailEntryOrVerifiedAtUtc ||
+                   TryGetDateTimeAttributeUtc(item, "VerifiedAt", out DateTime verifiedAtUtc) && verifiedAtUtc >= minLastEmailEntryOrVerifiedAtUtc;
+        }
+
+        private static bool TryGetDateTimeAttributeUtc(
+            IReadOnlyDictionary<string, AttributeValue> item,
+            string attributeName,
+            out DateTime valueUtc)
+        {
+            valueUtc = default;
+            if (!item.TryGetValue(attributeName, out var attributeValue) || string.IsNullOrWhiteSpace(attributeValue?.S))
+                return false;
+
+            string rawValue = attributeValue.S.Trim();
+            if (DateTimeOffset.TryParse(
+                    rawValue,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out DateTimeOffset dto))
+            {
+                valueUtc = dto.UtcDateTime;
+                return true;
+            }
+
+            if (DateTime.TryParse(
+                    rawValue,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out DateTime parsedDateTime))
+            {
+                valueUtc = DateTime.SpecifyKind(parsedDateTime, DateTimeKind.Utc);
+                return true;
+            }
+
+            return false;
         }
 
         private async Task<List<UserRecipient>> FetchItemUserEmailsAsync(bool onlyVerified, bool onlySubscribed)
@@ -1932,12 +2064,17 @@ namespace Uploader
                 patternUrl,
                 "admin",
                 DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture));
+            string siteUrlWithTracking = AppendTrackingParameters(
+                _linkHelper.SiteBaseUrl,
+                "admin",
+                DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture));
             string unsubscribeUrl = BuildUnsubscribeUrl(AdminPreviewUnsubscribeToken);
             var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
             RenderedEmailContent content = RenderHtmlEmailContent(
                 template,
                 "admin",
                 patternUrlWithTracking,
+                siteUrlWithTracking,
                 imageUrl,
                 altText,
                 unsubscribeUrl);
@@ -1979,10 +2116,12 @@ namespace Uploader
             // Send the same email to admin first.
             if (!string.IsNullOrEmpty(admin))
             {
+                string adminSiteUrl = AppendTrackingParameters(_linkHelper.SiteBaseUrl, "admin", eid);
                 RenderedEmailContent adminContent = RenderHtmlEmailContent(
                     template,
-                    null,
+                    "admin",
                     AppendUtmParameters(patternUrl),
+                    adminSiteUrl,
                     imageUrl,
                     altText,
                     null);
@@ -2005,15 +2144,6 @@ namespace Uploader
                     .ToList();
             }
 
-            int totalUserCount = await CountUsersAsync(
-                    usersTable,
-                    $"{verifiedAttribute} = :trueVal AND (attribute_not_exists({unsubscribedAttribute}) OR {unsubscribedAttribute} = :falseVal)",
-                    new Dictionary<string, AttributeValue>
-                    {
-                        { ":trueVal", new AttributeValue { BOOL = true } },
-                        { ":falseVal", new AttributeValue { BOOL = false } }
-                    })
-                .ConfigureAwait(false);
             await SendEmailsWithProgressAsync(
                 "[CrossStitchUsers]",
                 recipients,
@@ -2023,7 +2153,7 @@ namespace Uploader
                 imageUrl,
                 altText,
                 eid,
-                totalUserCount,
+                recipients.Count,
                 true,
                 usersTable,
                 emailAttribute,
@@ -2456,6 +2586,7 @@ namespace Uploader
             {
                 string cid = recipient.Cid ?? string.Empty;
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, eid);
+                string siteUrlWithTracking = AppendTrackingParameters(_linkHelper.SiteBaseUrl, cid, eid);
 
                 string unsubscribeUrl = BuildUnsubscribeUrlFromStoredToken(recipient.Email, recipient.UnsubscribeToken);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
@@ -2463,6 +2594,7 @@ namespace Uploader
                     template,
                     recipient.FirstName,
                     patternUrlWithTracking,
+                    siteUrlWithTracking,
                     imageUrl,
                     altText,
                     unsubscribeUrl);
@@ -2574,6 +2706,7 @@ namespace Uploader
             EmailTemplateDefinition template,
             string? firstName,
             string patternUrl,
+            string? siteUrl,
             string imageUrl,
             string altText,
             string? unsubscribeUrl)
@@ -2598,6 +2731,7 @@ namespace Uploader
                 unsubscribeUrl);
             string closing = ReplaceTemplateTokens(template.GetRequiredSection("Closing"), replacements);
             string signature = ReplaceTemplateTokens(template.GetRequiredSection("Signature"), replacements);
+            string signatureHtml = RenderHtmlSignature(signature, siteUrl);
             string textBody = JoinTextSections(
                 greeting,
                 beforeImage,
@@ -2614,10 +2748,21 @@ namespace Uploader
                 JoinHtmlSections(
                     afterImage,
                     unsubscribe,
-                    closing,
-                    signature);
+                    closing) +
+                signatureHtml;
 
             return new RenderedEmailContent(subject, textBody, htmlBody);
+        }
+
+        private static string RenderHtmlSignature(string signature, string? siteUrl)
+        {
+            if (string.IsNullOrWhiteSpace(signature))
+                return string.Empty;
+
+            if (string.IsNullOrWhiteSpace(siteUrl))
+                return ConvertPlainTextToHtml(signature);
+
+            return $"<p><a href=\"{WebUtility.HtmlEncode(siteUrl)}\">{WebUtility.HtmlEncode(signature)}</a></p>";
         }
 
         private static string GetRecipientName(string? firstName) =>
@@ -2742,6 +2887,9 @@ namespace Uploader
             return new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["<username>"] = userName,
+                ["[FName]"] = userName,
+                ["[Fname]"] = userName,
+                ["[fname]"] = userName,
                 ["[Recipient's Name]"] = userName,
                 ["[Recipient’s Name]"] = userName
             };
@@ -3161,6 +3309,7 @@ namespace Uploader
             }
 
             using var bitmap = new System.Drawing.Bitmap(images[0]);
+            //using var bitmap = new System.Drawing.Bitmap("D:\\Stitch Craft\\Charts\\ReadyCharts\\2026_04_13\\4__.jpg");
             bitmap.RotateFlip(System.Drawing.RotateFlipType.RotateNoneFlipY);
 
             ImageSource imgSource = ToBitmapSource(bitmap);
@@ -3634,4 +3783,3 @@ namespace Uploader
         #endregion
     }
 }
-
