@@ -1,28 +1,28 @@
 [Subject]
-This little bird looks ready to tell a story 🐦
+Running horse cross-stitch pattern – new freebie!
 
 [Greeting]
 Hi [FName],
 
 [BeforeImage]
-I’ve just finished another small design — and this one feels full of personality.
+This new design started with one idea: movement.
 
-🐦 Cute blue bird cross-stitch pattern
-Bright eyes, soft blue shades, and a curious little expression that makes it hard not to smile back.
+🐎 <b>Running horse cross-stitch pattern</b><br/>
+Flowing mane, warm colors, and a simple style that still feels energetic and alive.
 
 [ImageWithLink]
-<p><a href="<pattern_url>"><img src="<image_url>" alt="<alt_text>" style="max-width:280px; max-height:280px; width:auto; height:auto; border:0;"/></a></p>
+<p><a href="<pattern_url>"><img src="<image_url>" alt="Running horse cross-stitch pattern" style="max-width:280px; max-height:280px; width:auto; height:auto; border:0;"/></a></p>
 <p>You can download it here:<br/><a href="<pattern_url>">👉 Download the free pattern</a></p>
 
 [AfterImage]
-I really enjoy creating designs like this lately — small projects that are relaxing to stitch and don’t require weeks to finish.
+I always enjoy designing horses because even a few lines can completely change their mood — calm, strong, playful, or wild.<br/>
+For this one, I tried to capture that feeling of wind and motion.
 
-I’d love to know:
+Now I’m curious what you think:<br/>
+– Do you prefer realistic horses or more stylized designs like this?<br/>
+– Would you like to see more horse patterns?
 
-– Would you stitch this little bird?
-– Do you prefer realistic animals or cute cartoon-style ones?
-
-Just reply and tell me what you think — your feedback always helps inspire new ideas.
+Just reply and let me know — I truly enjoy reading your messages.
 
 [Unsubscribe]
 If you prefer not to receive these emails, you can unsubscribe here:
