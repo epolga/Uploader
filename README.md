@@ -8,5 +8,10 @@
 - Pinterest board description text now points to Cross-Stitch.com.
 
 ## Configuration notes
+
 - AppSettings keys `HtmlEmailTemplatePath` and `TextEmailTemplatePath` control which email template files are loaded.
+- You can now set these to the new shared location (recommended):
+	- `D:\ann\Git\cross-stitch-platform-docs\plan\uploader\HtmlEmailTemplate.txt`
+	- `D:\ann\Git\cross-stitch-platform-docs\plan\uploader\TextEmailTemplate.txt`
+- Or keep the old relative paths for legacy use.
 - Converter is expected at `D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe` and produces `<name>.converted.pdf`.
