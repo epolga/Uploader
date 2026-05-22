@@ -4,7 +4,7 @@
   <add key="AdminEmail" value="your-admin@example.com"/>
   <add key="PinterestClientSecret" value="replace-me"/>
   <add key="PinterestAccessToken" value="replace-me"/>
-  <add key="PinterestTokenStorePath" value="D:\Tmp\pinterest_tokens.json"/>
+  <add key="PinterestTokenStorePath" value="Uploader/secrets/pinterest_tokens.json"/>
   <add key="UnsubscribeSecret" value="replace-me"/>
   <add key="SesConfigurationSetName" value="your-configuration-set-name"/>
 </appSettings>

@@ -149,11 +149,12 @@ namespace Uploader.Helpers
                 throw new InvalidOperationException("PinterestClientId or PinterestClientSecret is not configured in App.config.");
             }
 
+
             var tokenStorePath = ConfigurationManager.AppSettings["PinterestTokenStorePath"];
             if (string.IsNullOrEmpty(tokenStorePath))
             {
-                // Default to local file in current directory
-                tokenStorePath = "pinterest_tokens.json";
+                // Default to shared location if not set in config
+                tokenStorePath = "Uploader/secrets/pinterest_tokens.json";
             }
 
             _tokenStore = new PinterestTokenStore(tokenStorePath);
