@@ -1,6 +1,6 @@
 ---
 name: email-template-usage
-description: Guidance for editing the Uploader's HTML email template and the App.config setting that points to it. Use when the user asks to edit email body content, add or rearrange template sections, change images or links inside the email, configure which template file the app loads, or troubleshoot a "does not contain any sections" error from the email sender.
+description: Invoke this skill whenever the user asks to change, edit, modify, update, or fix the Uploader's HTML email template (Uploader/Templates/HtmlEmailTemplate.txt) or the App.config setting that points to it. Covers content edits, section reordering, image and link changes, template-path configuration, and "does not contain any sections" troubleshooting. Does NOT cover actually sending the email — the WPF Uploader app handles SES delivery.
 ---
 
 # Email template usage
