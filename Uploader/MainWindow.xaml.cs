@@ -363,6 +363,36 @@ namespace Uploader
             }
         }
 
+        private async void BtnRestartEb_Click(object sender, RoutedEventArgs e)
+        {
+            var button = sender as System.Windows.Controls.Button;
+            if (button != null) button.IsEnabled = false;
+
+            txtStatus.Text += "Requesting Elastic Beanstalk restart...\r\n";
+
+            try
+            {
+                bool restarted = await _elasticBeanstalkHelper.RestartEnvironmentAsync(msg =>
+                {
+                    Dispatcher.BeginInvoke(new Action(() => { txtStatus.Text += msg; }));
+                }).ConfigureAwait(false);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    txtStatus.Text += restarted
+                        ? "Elastic Beanstalk restart requested successfully.\r\n"
+                        : "Elastic Beanstalk restart failed.\r\n";
+                }));
+            }
+            finally
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (button != null) button.IsEnabled = true;
+                }));
+            }
+        }
+
         private async void BtnTestPinterest_Click(object sender, RoutedEventArgs e)
         {
             try

@@ -111,6 +111,12 @@
                                                 Height="26"
                                                 Margin="10"
                                                 Click="InitializeUserSubscriptions_Click"/>
+
+                                        <Button Content="Restart Elastic Beanstalk"
+                                                Width="190"
+                                                Height="26"
+                                                Margin="10"
+                                                Click="BtnRestartEb_Click"/>
                                 </WrapPanel>
                         </Expander>
 
