@@ -1,31 +1,38 @@
 [Subject]
-Running horse cross-stitch pattern – new freebie!
+🐍 Cute baby snake cross-stitch pattern
 
 [Greeting]
 Hi [FName],
 
 [BeforeImage]
-This new design started with one idea: movement.
+I’ve just finished a new tiny design — and I think this may be one of the cutest little faces I’ve stitched lately.
 
-🐎 <b>Running horse cross-stitch pattern</b><br/>
-Flowing mane, warm colors, and a simple style that still feels energetic and alive.
 
 [ImageWithLink]
-<p><a href="<pattern_url>"><img src="<image_url>" alt="Running horse cross-stitch pattern" style="max-width:280px; max-height:280px; width:auto; height:auto; border:0;"/></a></p>
-<p>You can download it here:<br/><a href="<pattern_url>">👉 Download the free pattern</a></p>
+<p>
+	<a href="<pattern_url>">
+		<img src="<image_url>" alt="Cute baby snake cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
+	</a>
+</p>
+<p>
+	👉 <a href="<pattern_url>">Download the free pattern</a>
+</p>
+
 
 [AfterImage]
-I always enjoy designing horses because even a few lines can completely change their mood — calm, strong, playful, or wild.<br/>
-For this one, I tried to capture that feeling of wind and motion.
+Soft blue colors, simple shapes, and a calm expression that makes this project especially relaxing to work on.
 
-Now I’m curious what you think:<br/>
-– Do you prefer realistic horses or more stylized designs like this?<br/>
-– Would you like to see more horse patterns?
+I know snakes are not everyone’s first choice for cute designs…
+but this one completely changed my mind while I was creating it 😊
 
-Just reply and let me know — I truly enjoy reading your messages.
+Now I’d love to hear from you:
+– Would you stitch a snake pattern like this?
+– Should I create more unusual cute animals?
+
+Just reply and tell me what you think — your feedback always inspires new ideas.
 
 [Unsubscribe]
-If you prefer not to receive these emails, you can unsubscribe here:
+If you prefer not to receive these emails, you can unsubscribe here:<br/>
 <unsubscribe_url>
 
 [Closing]
