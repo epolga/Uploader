@@ -54,7 +54,7 @@ namespace Uploader
         private readonly ElasticBeanstalkHelper _elasticBeanstalkHelper =
             new ElasticBeanstalkHelper(
                 RegionEndpoint.USEast1,
-                ConfigurationManager.AppSettings["ElasticBeanstalkEnvironmentName"] ?? "cross-stitch-com-env");
+                ConfigurationManager.AppSettings["ElasticBeanstalkEnvironmentName"] ?? "cross-stitch-com-env-clone");
 
         private readonly S3Helper _s3Helper =
             new S3Helper(RegionEndpoint.USEast1, "cross-stitch-designs");
