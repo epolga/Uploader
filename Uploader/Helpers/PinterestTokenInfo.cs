@@ -150,13 +150,7 @@ namespace Uploader.Helpers
             }
 
 
-            var tokenStorePath = ConfigurationManager.AppSettings["PinterestTokenStorePath"];
-            if (string.IsNullOrEmpty(tokenStorePath))
-            {
-                // Default to shared location if not set in config
-                tokenStorePath = "Uploader/secrets/pinterest_tokens.json";
-            }
-
+            var tokenStorePath = PlatformConfig.ResolvePinterestTokenPath();
             _tokenStore = new PinterestTokenStore(tokenStorePath);
         }
 
