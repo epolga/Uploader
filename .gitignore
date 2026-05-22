@@ -380,3 +380,11 @@ FodyWeavers.xsd
 # JetBrains Rider
 .idea/
 *.sln.iml
+
+# Babysitter local working state (SDK install, run journal, drafts, blobs)
+.a5c/
+
+# Claude Code local settings (per-user permissions, never committed)
+.claude/settings.local.json
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
