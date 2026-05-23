@@ -1,17 +1,20 @@
 [Subject]
-🐍 Cute baby snake cross-stitch pattern
+A little sunflower to brighten your stitching 🌻
 
 [Greeting]
 Hi [FName],
 
 [BeforeImage]
-I’ve just finished a new tiny design — and I think this may be one of the cutest little faces I’ve stitched lately.
+I wanted to create something simple, cheerful, and relaxing this time.
+
+🌻 Sunflower cross-stitch pattern
+Warm yellow tones, clean shapes, and a design that feels a little like summer stitched into fabric.
 
 
 [ImageWithLink]
 <p>
 	<a href="<pattern_url>">
-		<img src="<image_url>" alt="Cute baby snake cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
+		<img src="<image_url>" alt="Sunflower cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
 	</a>
 </p>
 <p>
@@ -20,16 +23,13 @@ I’ve just finished a new tiny design — and I think this may be one of the cu
 
 
 [AfterImage]
-Soft blue colors, simple shapes, and a calm expression that makes this project especially relaxing to work on.
+Sometimes I enjoy working on designs like this between larger projects — something calm and uncomplicated that’s simply pleasant to stitch.
 
-I know snakes are not everyone’s first choice for cute designs…
-but this one completely changed my mind while I was creating it 😊
+I’d love to know:
+– Do you enjoy floral patterns?
+– Would you like to see more simple flowers and botanical designs?
 
-Now I’d love to hear from you:
-– Would you stitch a snake pattern like this?
-– Should I create more unusual cute animals?
-
-Just reply and tell me what you think — your feedback always inspires new ideas.
+Just reply and tell me what you think — your ideas often inspire my next pattern.
 
 [Unsubscribe]
 If you prefer not to receive these emails, you can unsubscribe here:<br/>

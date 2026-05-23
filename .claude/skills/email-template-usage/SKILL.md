@@ -39,6 +39,19 @@ Body content can reference these tokens — the app replaces them at render time
 
 For images, use `<img src="<image_url>" ...>` with `max-width` / `max-height` attributes to constrain rendering across email clients.
 
+## HTML is ONLY safe in `[ImageWithLink]`
+
+Narrative sections — `[Subject]`, `[Greeting]`, `[BeforeImage]`, `[AfterImage]`, `[Closing]`, `[Signature]` — render any HTML tags as **literal text** in the recipient's inbox. Wrapping a headline in `<strong>...</strong>` shows up as the literal characters `<strong>Sunflower cross-stitch pattern</strong>`, not as bold text. Same for `<b>`, `<em>`, `<i>`, `<p>`, `<a>`, `<span>`, and anything else.
+
+The only section where HTML renders correctly is `[ImageWithLink]` — that's where the `<a href="<pattern_url>"><img ...></a>` block lives, and HTML there is intentional. `[Unsubscribe]` historically uses `<br/>` and `<unsubscribe_url>` placeholder — leave those as-is; don't extend with new HTML.
+
+For emphasis in narrative sections:
+
+- Use emojis (the existing templates use 🌻, 🐍, 👉, 😊 for visual punctuation).
+- Use line breaks / blank lines to set headlines apart.
+- Use plain capitalisation (e.g. "Sunflower cross-stitch pattern" on its own line, no markup).
+- **Do not** convert markdown `**bold**` from the user's draft into `<strong>` tags — strip the `**` and let the line stand on its own. Markdown does not render in email either.
+
 ## Best practices
 
 - Avoid duplicate links to the same destination — most email clients show them as separate elements and it reads as spammy.
@@ -53,3 +66,4 @@ For images, use `<img src="<image_url>" ...>` with `max-width` / `max-height` at
 | Wrong template loaded | The `HtmlEmailTemplatePath` key in `App.config` — confirm it points to the file you just edited. |
 | Token not substituted (`[FName]` shows literally) | Token spelled wrong (case-sensitive on some tokens), or the sending code doesn't pass that field. Grep for the token usage in the C# email code before changing template syntax. |
 | Image renders too large / breaks layout | Add `max-width` / `max-height` to the `<img>` — many clients ignore CSS but honor inline attributes. |
+| HTML tag visible as literal text (e.g. `<strong>` shows up in the body) | The tag is in a narrative section. Only `[ImageWithLink]` renders HTML. Strip the tag and use emoji / line breaks for emphasis instead. |
