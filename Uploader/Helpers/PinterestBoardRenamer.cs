@@ -7,6 +7,8 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CrossStitch.Shared;
+using CrossStitch.Shared.Pinterest;
 using Newtonsoft.Json;
 
 namespace Uploader.Helpers
@@ -22,8 +24,12 @@ namespace Uploader.Helpers
 
         public PinterestBoardRenamer()
         {
-            _csvPath = ConfigurationManager.AppSettings["PinterestBoardsCsvPath"] ?? "AlbumBoards.csv";
-            _pinterestOAuthClient = new PinterestOAuthClient();
+            var configuredCsv = ConfigurationManager.AppSettings["PinterestBoardsCsvPath"];
+            _csvPath = !string.IsNullOrWhiteSpace(configuredCsv)
+                ? configuredCsv
+                : PlatformConfig.ResolveAlbumBoardsCsvPath();
+
+            _pinterestOAuthClient = HelperFactory.CreatePinterestOAuthClient();
         }
 
         /// <summary>

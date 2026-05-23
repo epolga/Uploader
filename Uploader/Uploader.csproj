@@ -14,17 +14,18 @@
     <PackageReference Include="AWSSDK.DynamoDBv2" Version="3.7.400" />
     <PackageReference Include="iTextSharp" Version="5.5.13.4" />
     <PackageReference Include="log4net" Version="3.2.0" />
-    <PackageReference Include="AWSSDK.SimpleEmail" Version="3.7.300.42" />
+    <PackageReference Include="AWSSDK.SimpleEmail" Version="3.7.401.10" />
     <PackageReference Include="AWSSDK.EC2" version="3.7.413" />
     <PackageReference Include="AWSSDK.ElasticBeanstalk" Version="3.7.100" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\CrossStitch.Shared\src\CrossStitch.Shared\CrossStitch.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="App.private.config" Condition="Exists('App.private.config')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="AlbumBoards.csv">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Templates\*.txt">

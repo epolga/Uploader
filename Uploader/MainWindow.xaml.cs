@@ -27,6 +27,9 @@ using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
 using UploadPatterns;
 using Uploader.Helpers;
+using CrossStitch.Shared;
+using CrossStitch.Shared.Pinterest;
+using CrossStitch.Shared.Email;
 using MessageBox = System.Windows.MessageBox;
 using Path = System.IO.Path;
 
@@ -59,8 +62,8 @@ namespace Uploader
         private readonly S3Helper _s3Helper =
             new S3Helper(RegionEndpoint.USEast1, "cross-stitch-designs");
 
-        private readonly PinterestHelper _pinterestHelper = new PinterestHelper();
-        private readonly PatternLinkHelper _linkHelper = new PatternLinkHelper();
+        private readonly PinterestUploader _pinterestHelper = HelperFactory.CreatePinterestUploader();
+        private readonly PatternLinkHelper _linkHelper = HelperFactory.CreatePatternLinkHelper();
         private readonly EmailHelper _emailHelper = new EmailHelper();
         private readonly TransferUtility _s3TransferUtility;
 
@@ -350,7 +353,7 @@ namespace Uploader
 
                 txtStatus.Text += "[Pinterest OAuth] Code received. Exchanging for token...\r\n";
 
-                var oauthClient = new PinterestOAuthClient();
+                var oauthClient = HelperFactory.CreatePinterestOAuthClient();
                 var tokenInfo = await oauthClient.ExchangeAuthorizationCodeAsync(code);
 
                 txtStatus.Text += $"[Pinterest OAuth] Success! Token scope: {tokenInfo.Scope}\r\n";
@@ -399,7 +402,7 @@ namespace Uploader
             {
                 // Hard-coded test path - adjust if needed
                 var info = new PatternInfo(@"D:\Stitch Craft\Charts\ReadyCharts\2025_11_02\1.pdf");
-                string pinId = await _pinterestHelper.UploadPinForPatternAsync(info, true);
+                string pinId = await _pinterestHelper.UploadPinForPatternAsync(info.ToPinPatternInfo(), true);
 
                 txtStatus.Text += $"[Test Pinterest] Pin created: {pinId}\r\n";
             }
@@ -650,7 +653,7 @@ namespace Uploader
             // 3. Create Pinterest pin
             string? pinterestPhotoFileName = GetPinterestPhotoFileName();
             PatternInfo.PinId = await _pinterestHelper
-                .UploadPinForPatternAsync(PatternInfo, photoFileName: pinterestPhotoFileName)
+                .UploadPinForPatternAsync(PatternInfo.ToPinPatternInfo(), photoFileName: pinterestPhotoFileName)
                 .ConfigureAwait(false);
 
             if (string.IsNullOrWhiteSpace(PatternInfo.PinId))

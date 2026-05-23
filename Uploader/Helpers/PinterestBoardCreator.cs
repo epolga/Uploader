@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 using Amazon;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
+using CrossStitch.Shared;
+using CrossStitch.Shared.Pinterest;
 using Newtonsoft.Json;
 
 namespace Uploader.Helpers
@@ -52,9 +54,13 @@ namespace Uploader.Helpers
             _dynamoDbClient = new AmazonDynamoDBClient(RegionEndpoint.USEast1);
 
             _tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
-            _csvPath = ConfigurationManager.AppSettings["PinterestBoardsCsvPath"] ?? "AlbumBoards.csv";
 
-            _pinterestOAuthClient = new PinterestOAuthClient();
+            var configuredCsv = ConfigurationManager.AppSettings["PinterestBoardsCsvPath"];
+            _csvPath = !string.IsNullOrWhiteSpace(configuredCsv)
+                ? configuredCsv
+                : PlatformConfig.ResolveAlbumBoardsCsvPath();
+
+            _pinterestOAuthClient = HelperFactory.CreatePinterestOAuthClient();
         }
 
         /// <summary>
