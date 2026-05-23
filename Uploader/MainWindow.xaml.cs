@@ -90,6 +90,14 @@ namespace Uploader
             { "Subject", "Greeting", "BeforeImage", "ImageWithLink", "AfterImage", "Unsubscribe", "Closing", "Signature" };
         private static readonly string[] TextEmailTemplateRequiredSections =
             { "Subject", "Greeting", "BeforeBody", "AfterBody", "Unsubscribe", "Closing", "Signature" };
+
+        // Cached email templates. Populated lazily on first use via
+        // GetActiveHtmlEmailTemplate / GetActiveTextEmailTemplate, and
+        // refreshed by the "Reload Email Template" button. Send loops read
+        // these fields once per iteration so clicking Reload mid-send causes
+        // subsequent emails in the same loop to pick up the new template.
+        private EmailTemplateDefinition? _cachedHtmlEmailTemplate;
+        private EmailTemplateDefinition? _cachedTextEmailTemplate;
         private int _albumId;
 
         public PatternInfo? PatternInfo { get; private set; }
@@ -705,7 +713,7 @@ namespace Uploader
             string usersTable = ConfigurationManager.AppSettings["UsersTableName"] ?? "CrossStitchUsers";
             string emailAttribute = ConfigurationManager.AppSettings["UserEmailAttribute"] ?? "Email";
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
-            EmailTemplateDefinition template = LoadTextEmailTemplate();
+            EmailTemplateDefinition template = GetActiveTextEmailTemplate();
             DateTime recentUserCutoffUtc = DateTime.UtcNow.AddMonths(-2);
             LatestDesignEmailInfo latestDesign = await GetLatestDesignEmailInfoAsync().ConfigureAwait(false);
             string patternUrl = BuildPatternUrl(latestDesign);
@@ -759,7 +767,6 @@ namespace Uploader
             await SendTextEmailsWithProgressAsync(
                 "[TextEmail]",
                 recipients,
-                template,
                 sender,
                 patternUrl,
                 recipients.Count,
@@ -2087,7 +2094,7 @@ namespace Uploader
                 return;
 
             LatestDesignEmailInfo latestDesign = await GetLatestDesignEmailInfoAsync().ConfigureAwait(false);
-            EmailTemplateDefinition template = LoadHtmlEmailTemplate();
+            EmailTemplateDefinition template = GetActiveHtmlEmailTemplate();
             string patternUrl = BuildPatternUrl(latestDesign);
             string imageUrl = _linkHelper.BuildImageUrl(latestDesign.DesignId, latestDesign.AlbumId);
             string altText = string.IsNullOrWhiteSpace(latestDesign.Title)
@@ -2134,7 +2141,7 @@ namespace Uploader
             string userIdAttribute = ConfigurationManager.AppSettings["UserIdAttribute"] ?? "ID";
             string verifiedAttribute = ConfigurationManager.AppSettings["UserVerifiedAttribute"] ?? "Verified";
             string unsubscribedAttribute = ConfigurationManager.AppSettings["UserUnsubscribedAttribute"] ?? "Unsubscribed";
-            EmailTemplateDefinition template = LoadHtmlEmailTemplate();
+            EmailTemplateDefinition template = GetActiveHtmlEmailTemplate();
 
             if (string.IsNullOrEmpty(sender) || userRecipients.Count == 0)
                 return;
@@ -2180,7 +2187,6 @@ namespace Uploader
             await SendEmailsWithProgressAsync(
                 "[CrossStitchUsers]",
                 recipients,
-                template,
                 sender,
                 patternUrl,
                 imageUrl,
@@ -2462,7 +2468,6 @@ namespace Uploader
         private async Task SendTextEmailsWithProgressAsync(
             string label,
             List<UserRecipient> recipients,
-            EmailTemplateDefinition template,
             string sender,
             string patternUrl,
             int totalCount,
@@ -2512,7 +2517,9 @@ namespace Uploader
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
                 string cid = recipient.Cid ?? string.Empty;
                 string patternUrlWithTracking = AppendTrackingParameters(patternUrl, cid, DateTime.UtcNow.ToString("yyMMdd", CultureInfo.InvariantCulture));
-                RenderedEmailContent content = RenderTextEmailContent(template, recipient.FirstName, patternUrlWithTracking, unsubscribeUrl);
+                // Re-read the cache each iteration so a mid-send Reload click
+                // applies the new template to subsequent emails.
+                RenderedEmailContent content = RenderTextEmailContent(GetActiveTextEmailTemplate(), recipient.FirstName, patternUrlWithTracking, unsubscribeUrl);
 
                 await _emailHelper.SendEmailAsync(
                     _sesClient,
@@ -2567,7 +2574,6 @@ namespace Uploader
         private async Task SendEmailsWithProgressAsync(
             string label,
             List<UserRecipient> recipients,
-            EmailTemplateDefinition template,
             string sender,
             string patternUrl,
             string imageUrl,
@@ -2623,8 +2629,10 @@ namespace Uploader
 
                 string unsubscribeUrl = BuildUnsubscribeUrlFromStoredToken(recipient.Email, recipient.UnsubscribeToken);
                 var unsubscribeHeaders = BuildUnsubscribeHeaders(unsubscribeUrl, sender);
+                // Re-read the cache each iteration so a mid-send Reload click
+                // applies the new template to subsequent emails.
                 RenderedEmailContent content = RenderHtmlEmailContent(
-                    template,
+                    GetActiveHtmlEmailTemplate(),
                     recipient.FirstName,
                     patternUrlWithTracking,
                     siteUrlWithTracking,
@@ -2696,6 +2704,15 @@ namespace Uploader
                 "TextEmailTemplatePath",
                 TextEmailTemplatePathDefault,
                 TextEmailTemplateRequiredSections);
+
+        // The cache accessors used by both the Send code paths and the per-
+        // recipient loops. Lazy-load on first call so a Send that runs before
+        // any explicit Reload still gets a valid template.
+        private EmailTemplateDefinition GetActiveHtmlEmailTemplate() =>
+            _cachedHtmlEmailTemplate ??= LoadHtmlEmailTemplate();
+
+        private EmailTemplateDefinition GetActiveTextEmailTemplate() =>
+            _cachedTextEmailTemplate ??= LoadTextEmailTemplate();
 
         private static RenderedEmailContent RenderTextEmailContent(
             EmailTemplateDefinition template,
@@ -3772,30 +3789,37 @@ namespace Uploader
             }
         }
 
-        // Re-reads the HTML + Text email templates from disk and prints the
-        // resolved path, Subject line, and file mtime to the status log so you
-        // can verify the file you just edited is the one the app will use on
-        // the next "Send Emails" click. NOTE: templates are not cached
-        // between sends — each send already reloads from disk. What this
-        // button protects against is the more subtle bin-copy staleness:
-        // MSBuild copies Uploader/Templates/*.txt → bin/.../Templates/*.txt on
-        // rebuild, and HtmlEmailTemplatePath is a relative path resolved
-        // against the running assembly's directory. Edits to the source file
-        // are invisible until rebuild OR until App.config is changed to an
-        // absolute path pointing at the source.
+        // Reloads the HTML + Text email templates from disk into the in-memory
+        // cache (_cachedHtmlEmailTemplate / _cachedTextEmailTemplate). The
+        // per-recipient send loops re-read this cache each iteration, so
+        // clicking Reload mid-send applies the new template to all subsequent
+        // emails in the in-flight loop. The status block reports the resolved
+        // path, mtime, section count, and Subject so you can verify the file
+        // the app just loaded is the one you intend to send.
+        //
+        // Bin-copy gotcha: HtmlEmailTemplatePath in App.config is a relative
+        // path resolved against the running assembly's directory. The MSBuild
+        // PreserveNewest copy from Uploader/Templates/*.txt to
+        // bin/.../Templates/*.txt only refreshes on rebuild — so if the mtime
+        // shown here looks stale after you edited the source, the project
+        // needs a rebuild (or switch the App.config key to an absolute path
+        // pointing at the source file).
         private void BtnReloadEmailTemplate_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                EmailTemplateDefinition html = LoadHtmlEmailTemplate();
-                EmailTemplateDefinition text = LoadTextEmailTemplate();
+                _cachedHtmlEmailTemplate = LoadHtmlEmailTemplate();
+                _cachedTextEmailTemplate = LoadTextEmailTemplate();
+
+                EmailTemplateDefinition html = _cachedHtmlEmailTemplate;
+                EmailTemplateDefinition text = _cachedTextEmailTemplate;
 
                 string htmlSubject = html.GetRequiredSection("Subject").Trim();
                 string textSubject = text.GetRequiredSection("Subject").Trim();
                 DateTime htmlMtime = File.GetLastWriteTime(html.SourcePath);
                 DateTime textMtime = File.GetLastWriteTime(text.SourcePath);
 
-                txtStatus.Text += "Email templates reloaded.\r\n";
+                txtStatus.Text += "Email templates reloaded (live cache updated; in-flight send loops will pick up these versions on their next iteration).\r\n";
                 txtStatus.Text += $"  HTML: {html.SourcePath}\r\n";
                 txtStatus.Text += $"        mtime {htmlMtime:yyyy-MM-dd HH:mm:ss}, {html.Sections.Count} sections\r\n";
                 txtStatus.Text += $"        Subject: {htmlSubject}\r\n";
