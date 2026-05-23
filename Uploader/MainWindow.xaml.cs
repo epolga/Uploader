@@ -3772,6 +3772,43 @@ namespace Uploader
             }
         }
 
+        // Re-reads the HTML + Text email templates from disk and prints the
+        // resolved path, Subject line, and file mtime to the status log so you
+        // can verify the file you just edited is the one the app will use on
+        // the next "Send Emails" click. NOTE: templates are not cached
+        // between sends — each send already reloads from disk. What this
+        // button protects against is the more subtle bin-copy staleness:
+        // MSBuild copies Uploader/Templates/*.txt → bin/.../Templates/*.txt on
+        // rebuild, and HtmlEmailTemplatePath is a relative path resolved
+        // against the running assembly's directory. Edits to the source file
+        // are invisible until rebuild OR until App.config is changed to an
+        // absolute path pointing at the source.
+        private void BtnReloadEmailTemplate_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                EmailTemplateDefinition html = LoadHtmlEmailTemplate();
+                EmailTemplateDefinition text = LoadTextEmailTemplate();
+
+                string htmlSubject = html.GetRequiredSection("Subject").Trim();
+                string textSubject = text.GetRequiredSection("Subject").Trim();
+                DateTime htmlMtime = File.GetLastWriteTime(html.SourcePath);
+                DateTime textMtime = File.GetLastWriteTime(text.SourcePath);
+
+                txtStatus.Text += "Email templates reloaded.\r\n";
+                txtStatus.Text += $"  HTML: {html.SourcePath}\r\n";
+                txtStatus.Text += $"        mtime {htmlMtime:yyyy-MM-dd HH:mm:ss}, {html.Sections.Count} sections\r\n";
+                txtStatus.Text += $"        Subject: {htmlSubject}\r\n";
+                txtStatus.Text += $"  Text: {text.SourcePath}\r\n";
+                txtStatus.Text += $"        mtime {textMtime:yyyy-MM-dd HH:mm:ss}, {text.Sections.Count} sections\r\n";
+                txtStatus.Text += $"        Subject: {textSubject}\r\n";
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text += $"Failed to reload email template: {ex.Message}\r\n";
+            }
+        }
+
         private async void RemoveSuppressedUsers_Click(object sender, RoutedEventArgs e)
         {
             txtStatus.Text += "Starting removal of suppressed users...\r\n";
