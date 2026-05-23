@@ -385,6 +385,7 @@ FodyWeavers.xsd
 .a5c/
 
 # Claude Code local settings (per-user permissions, never committed)
+.claude/settings.json
 .claude/settings.local.json
 .claude/scheduled_tasks.json
 .claude/scheduled_tasks.lock
