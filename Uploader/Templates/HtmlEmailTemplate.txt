@@ -1,20 +1,21 @@
 [Subject]
-A little sunflower to brighten your stitching 🌻
+This horse refused to stand still 🐎
 
 [Greeting]
 Hi [FName],
 
 [BeforeImage]
-I wanted to create something simple, cheerful, and relaxing this time.
+Some designs feel calm and quiet…
+and some feel like they're already moving before the stitching even begins.
 
-🌻 Sunflower cross-stitch pattern
-Warm yellow tones, clean shapes, and a design that feels a little like summer stitched into fabric.
+🐎 Running horse cross-stitch pattern
+Flowing mane, strong movement, and warm earthy colors that make this design feel full of energy.
 
 
 [ImageWithLink]
 <p>
 	<a href="<pattern_url>">
-		<img src="<image_url>" alt="Sunflower cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
+		<img src="<image_url>" alt="Running horse cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
 	</a>
 </p>
 <p>
@@ -23,13 +24,14 @@ Warm yellow tones, clean shapes, and a design that feels a little like summer st
 
 
 [AfterImage]
-Sometimes I enjoy working on designs like this between larger projects — something calm and uncomplicated that’s simply pleasant to stitch.
+While working on this one, I kept adjusting tiny details to make the motion feel more natural — especially the mane and legs.
+It's always surprising how a few stitches can completely change the feeling of a design.
 
-I’d love to know:
-– Do you enjoy floral patterns?
-– Would you like to see more simple flowers and botanical designs?
+I'd love to hear your opinion:
+– Do you enjoy dynamic patterns like this?
+– Or do you prefer calmer, more minimal designs?
 
-Just reply and tell me what you think — your ideas often inspire my next pattern.
+Just reply and tell me what you think — your feedback truly helps shape future patterns.
 
 [Unsubscribe]
 If you prefer not to receive these emails, you can unsubscribe here:<br/>
