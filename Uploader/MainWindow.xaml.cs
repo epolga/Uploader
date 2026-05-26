@@ -82,6 +82,14 @@ namespace Uploader
         private const float PinterestWatermarkMinFontSize = 24f;
         private const string HtmlEmailTemplatePathDefault = "Templates\\HtmlEmailTemplate.txt";
         private const string TextEmailTemplatePathDefault = "Templates\\TextEmailTemplate.txt";
+        // %CROSS_STITCH% in any path read by ResolveTemplatePath expands to the
+        // CROSS_STITCH environment variable, falling back to this default when
+        // the env var is not set. Lets App.config point at sibling-repo paths
+        // (cross-stitch-platform-docs/docs/uploader/HtmlEmailTemplate.txt) in
+        // a way that survives moving all three repos to a different common root.
+        private const string CrossStitchRootEnvVar = "CROSS_STITCH";
+        private const string CrossStitchRootDefault = @"D:\ann\Git";
+        private const string CrossStitchRootToken = "%CROSS_STITCH%";
         private const string AdminPreviewUnsubscribeToken = "preview-admin-unsubscribe-token";
         private const string SuppressedListPath = @"D:\ann\Git\cross-stitch\list-suppressed.txt";
         private const string ConverterExePath = @"D:\ann\Git\Converter\bin\Release\net9.0\Converter.exe";
@@ -2858,10 +2866,26 @@ namespace Uploader
 
         private static string ResolveTemplatePath(string templatePath)
         {
+            templatePath = ExpandCrossStitchToken(templatePath);
+
             if (Path.IsPathRooted(templatePath))
                 return templatePath;
 
             return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, templatePath);
+        }
+
+        // Substitutes %CROSS_STITCH% with the CROSS_STITCH env var (falling back
+        // to CrossStitchRootDefault) so App.config can express paths like
+        // %CROSS_STITCH%\cross-stitch-platform-docs\docs\uploader\HtmlEmailTemplate.txt
+        // without hard-coding the local checkout root.
+        private static string ExpandCrossStitchToken(string path)
+        {
+            if (string.IsNullOrEmpty(path) || path.IndexOf(CrossStitchRootToken, StringComparison.OrdinalIgnoreCase) < 0)
+                return path;
+
+            string root = Environment.GetEnvironmentVariable(CrossStitchRootEnvVar);
+            if (string.IsNullOrWhiteSpace(root)) root = CrossStitchRootDefault;
+            return path.Replace(CrossStitchRootToken, root, StringComparison.OrdinalIgnoreCase);
         }
 
         private static Dictionary<string, string> ParseTemplateSections(string content, string sourcePath)
