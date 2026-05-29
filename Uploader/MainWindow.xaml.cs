@@ -418,9 +418,9 @@ namespace Uploader
             {
                 // Hard-coded test path - adjust if needed
                 var info = new PatternInfo(@"D:\Stitch Craft\Charts\ReadyCharts\2025_11_02\1.pdf");
-                string pinId = await _pinterestHelper.UploadPinForPatternAsync(info.ToPinPatternInfo(), true);
+                var pinResult = await _pinterestHelper.UploadPinForPatternAsync(info.ToPinPatternInfo(), true);
 
-                txtStatus.Text += $"[Test Pinterest] Pin created: {pinId}\r\n";
+                txtStatus.Text += $"[Test Pinterest] Pin created: {pinResult.PinId} ({pinResult.LinkType})\r\n";
             }
             catch (Exception ex)
             {
@@ -667,18 +667,20 @@ namespace Uploader
             await UploadImageToS3Async(PatternInfo.DesignID).ConfigureAwait(false);
 
             // 3. Create Pinterest pin
+            PatternInfo.AlbumCaption = await GetAlbumCaptionAsync(_albumId).ConfigureAwait(false);
             string? pinterestPhotoFileName = GetPinterestPhotoFileName();
-            PatternInfo.PinId = await _pinterestHelper
+            var pinResult = await _pinterestHelper
                 .UploadPinForPatternAsync(PatternInfo.ToPinPatternInfo(), photoFileName: pinterestPhotoFileName)
                 .ConfigureAwait(false);
 
+            PatternInfo.PinId = pinResult.PinId;
             if (string.IsNullOrWhiteSpace(PatternInfo.PinId))
             {
                 throw new InvalidOperationException("Pinterest pin was created without returning a pin ID.");
             }
 
             // 4. Insert item into DynamoDB
-            await InsertItemIntoDynamoDbAsync(nGlobalPage).ConfigureAwait(false);
+            await InsertItemIntoDynamoDbAsync(nGlobalPage, pinResult.LinkType).ConfigureAwait(false);
 
             // 5. Restart Elastic Beanstalk environment (status text is updated via callback which marshals to UI)
             bool restarted = await _elasticBeanstalkHelper.RestartEnvironmentAsync(msg =>
@@ -1072,7 +1074,7 @@ namespace Uploader
             return _s3TransferUtility.UploadAsync(request);
         }
 
-        private async Task InsertItemIntoDynamoDbAsync(int nGlobalPage)
+        private async Task InsertItemIntoDynamoDbAsync(int nGlobalPage, CrossStitch.Shared.Pinterest.PinLinkType pinLinkType = CrossStitch.Shared.Pinterest.PinLinkType.Design)
         {
             if (PatternInfo == null)
                 throw new InvalidOperationException("PatternInfo is not initialized.");
@@ -1095,7 +1097,8 @@ namespace Uploader
                 { "NGlobalPage", new AttributeValue { N = nGlobalPage.ToString() } },
                 { "Notes",       new AttributeValue { S = PatternInfo.Notes } },
                 { "Width",       new AttributeValue { N = PatternInfo.Width.ToString() } },
-                { "PinID",       new AttributeValue { S = PatternInfo.PinId } }
+                { "PinID",       new AttributeValue { S = PatternInfo.PinId } },
+                { "PinLinkType", new AttributeValue { S = pinLinkType.ToString().ToUpperInvariant() } },
             };
 
             var request = new PutItemRequest
@@ -1105,6 +1108,36 @@ namespace Uploader
             };
 
             await _dynamoDbClient.PutItemAsync(request).ConfigureAwait(false);
+        }
+
+        private async Task<string> GetAlbumCaptionAsync(int albumId)
+        {
+            try
+            {
+                string tableName = ConfigurationManager.AppSettings["DynamoTableName"] ?? "CrossStitchItems";
+                var request = new QueryRequest
+                {
+                    TableName = tableName,
+                    KeyConditionExpression = "ID = :pk",
+                    FilterExpression = "EntityType = :albumType",
+                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        { ":pk",        new AttributeValue { S = $"ALB#{albumId:D4}" } },
+                        { ":albumType", new AttributeValue { S = "ALBUM" } },
+                    },
+                    ProjectionExpression = "Caption",
+                    Limit = 1,
+                };
+                var response = await _dynamoDbClient.QueryAsync(request).ConfigureAwait(false);
+                if (response.Items.Count > 0 &&
+                    response.Items[0].TryGetValue("Caption", out var captionAttr) &&
+                    !string.IsNullOrWhiteSpace(captionAttr.S))
+                {
+                    return captionAttr.S;
+                }
+            }
+            catch { /* non-fatal: album URL degrades gracefully */ }
+            return string.Empty;
         }
 
         private async Task<List<AlbumInfo>> FetchAlbumSuggestionsAsync(int takeCount)

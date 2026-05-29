@@ -46,10 +46,23 @@ public static class HelperFactory
     {
         var oauth = CreatePinterestOAuthClient();
         var link = CreatePatternLinkHelper();
+
+        double albumLinkRatio = 0.0;
+        var ratioStr = AppSetting("PinterestAlbumLinkRatio");
+        if (!string.IsNullOrWhiteSpace(ratioStr) &&
+            double.TryParse(ratioStr, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed) &&
+            parsed > 0.0)
+        {
+            albumLinkRatio = Math.Clamp(parsed, 0.0, 1.0);
+        }
+
         var config = new PinterestUploaderConfig
         {
             BoardsCsvPath = AppSetting("PinterestBoardsCsvPath"),
             DefaultBoardId = AppSetting("PinterestBoardId"),
+            AlbumLinkRatio = albumLinkRatio,
+            AbStatsFilePath = albumLinkRatio > 0.0 ? PlatformConfig.ResolvePinAbStatsPath() : null,
         };
         return new PinterestUploader(config, link, oauth);
     }
@@ -73,6 +86,7 @@ public static class HelperFactory
             Width = info.Width,
             Height = info.Height,
             NColors = info.NColors,
+            AlbumCaption = info.AlbumCaption ?? string.Empty,
         };
     }
 

@@ -38,6 +38,12 @@ namespace UploadPatterns
         public string NPage { get; set; } = string.Empty;
 
         /// <summary>
+        /// Album display name (e.g. "Farm Animals"). Set after DDB lookup so the
+        /// Pinterest uploader can build the correct album URL for A/B testing.
+        /// </summary>
+        public string AlbumCaption { get; set; } = "";
+
+        /// <summary>
         /// Pinterest Pin ID created for this design (if any).
         /// </summary>
         public string PinId
