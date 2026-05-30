@@ -90,6 +90,8 @@ public static class HelperFactory
         };
     }
 
+    public static string? GetAnthropicApiKey() => AppSetting("AnthropicApiKey");
+
     private static string ResolveImageBaseUrl()
     {
         var explicitBase = AppSetting("S3PublicBaseUrl");

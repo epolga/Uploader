@@ -679,8 +679,24 @@ namespace Uploader
                 throw new InvalidOperationException("Pinterest pin was created without returning a pin ID.");
             }
 
+            // 3b. Generate SEO description via Claude (non-blocking — upload continues if it fails)
+            Dispatcher.BeginInvoke(new Action(() => txtStatus.Text += "Generating SEO description...\r\n"));
+            string? seoDescription = await Uploader.Helpers.SeoTextGenerator.GenerateAsync(
+                PatternInfo.Title,
+                PatternInfo.AlbumCaption,
+                PatternInfo.Width,
+                PatternInfo.Height,
+                PatternInfo.NColors,
+                Uploader.Helpers.HelperFactory.GetAnthropicApiKey() ?? string.Empty
+            ).ConfigureAwait(false);
+
+            Dispatcher.BeginInvoke(new Action(() =>
+                txtStatus.Text += string.IsNullOrWhiteSpace(seoDescription)
+                    ? "SEO description: skipped (API unavailable).\r\n"
+                    : $"SEO description: {seoDescription.Length} chars generated.\r\n"));
+
             // 4. Insert item into DynamoDB
-            await InsertItemIntoDynamoDbAsync(nGlobalPage, pinResult.LinkType).ConfigureAwait(false);
+            await InsertItemIntoDynamoDbAsync(nGlobalPage, pinResult.LinkType, seoDescription).ConfigureAwait(false);
 
             // 5. Restart Elastic Beanstalk environment (status text is updated via callback which marshals to UI)
             bool restarted = await _elasticBeanstalkHelper.RestartEnvironmentAsync(msg =>
@@ -1074,7 +1090,10 @@ namespace Uploader
             return _s3TransferUtility.UploadAsync(request);
         }
 
-        private async Task InsertItemIntoDynamoDbAsync(int nGlobalPage, CrossStitch.Shared.Pinterest.PinLinkType pinLinkType = CrossStitch.Shared.Pinterest.PinLinkType.Design)
+        private async Task InsertItemIntoDynamoDbAsync(
+            int nGlobalPage,
+            CrossStitch.Shared.Pinterest.PinLinkType pinLinkType = CrossStitch.Shared.Pinterest.PinLinkType.Design,
+            string? seoDescription = null)
         {
             if (PatternInfo == null)
                 throw new InvalidOperationException("PatternInfo is not initialized.");
@@ -1100,6 +1119,9 @@ namespace Uploader
                 { "PinID",       new AttributeValue { S = PatternInfo.PinId } },
                 { "PinLinkType", new AttributeValue { S = pinLinkType.ToString().ToUpperInvariant() } },
             };
+
+            if (!string.IsNullOrWhiteSpace(seoDescription))
+                item["SeoDescription"] = new AttributeValue { S = seoDescription };
 
             var request = new PutItemRequest
             {
