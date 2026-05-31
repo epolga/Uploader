@@ -1,21 +1,19 @@
 [Subject]
-This horse refused to stand still 🐎
+A quick little gazelle joined the collection 🦌
 
 [Greeting]
 Hi [FName],
 
 [BeforeImage]
-Some designs feel calm and quiet…
-and some feel like they're already moving before the stitching even begins.
+I've been working on another small design, and this one is all about grace and movement.
 
-🐎 Running horse cross-stitch pattern
-Flowing mane, strong movement, and warm earthy colors that make this design feel full of energy.
-
+🦌 Gazelle cross-stitch pattern
+Simple lines, warm colors, and a light, elegant look that makes it feel almost as if it's running across the fabric.
 
 [ImageWithLink]
 <p>
 	<a href="<pattern_url>">
-		<img src="<image_url>" alt="Running horse cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
+		<img src="<image_url>" alt="Gazelle cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
 	</a>
 </p>
 <p>
@@ -24,14 +22,14 @@ Flowing mane, strong movement, and warm earthy colors that make this design feel
 
 
 [AfterImage]
-While working on this one, I kept adjusting tiny details to make the motion feel more natural — especially the mane and legs.
-It's always surprising how a few stitches can completely change the feeling of a design.
+One thing I love about smaller patterns is that they can capture a feeling without needing hundreds of stitches.
+For this gazelle, I wanted to keep the design clean and uncluttered while still giving it a sense of speed and freedom.
 
-I'd love to hear your opinion:
-– Do you enjoy dynamic patterns like this?
-– Or do you prefer calmer, more minimal designs?
+I'd love to hear what you think:
+– Do you enjoy wildlife designs like this?
+– What animal would you like to see next?
 
-Just reply and tell me what you think — your feedback truly helps shape future patterns.
+Just reply and let me know — your suggestions often become future patterns.
 
 [Unsubscribe]
 If you prefer not to receive these emails, you can unsubscribe here:<br/>
