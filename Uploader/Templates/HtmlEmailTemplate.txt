@@ -1,19 +1,19 @@
 [Subject]
-A quick little gazelle joined the collection 🦌
+A gentle antelope for your next stitch 🧵
 
 [Greeting]
 Hi [FName],
 
 [BeforeImage]
-I've been working on another small design, and this one is all about grace and movement.
+I've just finished a new animal design, and this one has a calm, graceful feeling.
 
-🦌 Gazelle cross-stitch pattern
-Simple lines, warm colors, and a light, elegant look that makes it feel almost as if it's running across the fabric.
+🦌 Antelope cross-stitch pattern
+Warm colors, long horns, and clean shapes that make it pleasant and relaxing to stitch.
 
 [ImageWithLink]
 <p>
 	<a href="<pattern_url>">
-		<img src="<image_url>" alt="Gazelle cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
+		<img src="<image_url>" alt="Antelope cross-stitch pattern" style="max-width:150px; max-height:150px; width:auto; height:auto; border:0;"/>
 	</a>
 </p>
 <p>
@@ -22,14 +22,13 @@ Simple lines, warm colors, and a light, elegant look that makes it feel almost a
 
 
 [AfterImage]
-One thing I love about smaller patterns is that they can capture a feeling without needing hundreds of stitches.
-For this gazelle, I wanted to keep the design clean and uncluttered while still giving it a sense of speed and freedom.
+I'm enjoying these wildlife designs because they feel natural and elegant without being too complicated.
 
-I'd love to hear what you think:
-– Do you enjoy wildlife designs like this?
-– What animal would you like to see next?
+I'd love to know:
+– Do you like animal patterns in this style?
+– What wildlife design would you like to see next?
 
-Just reply and let me know — your suggestions often become future patterns.
+Just reply and tell me what you think.
 
 [Unsubscribe]
 If you prefer not to receive these emails, you can unsubscribe here:<br/>
